@@ -34,15 +34,7 @@ export const Titlebar = () => {
           <img src={icon} />
         </div>
       )}
-
-      <div
-        className="window-titlebar-title"
-        {...(titleCentered && { 'data-centered': true })}
-        style={{ visibility: menusVisible ? 'hidden' : 'visible' }}
-      >
-        {title}
-      </div>
-      {menusVisible && <TitlebarMenu />}
+      <TitlebarMenu />
       {wcontext?.platform === 'win32' && <TitlebarControls />}
     </div>
   )

@@ -1,4 +1,4 @@
-import { type BrowserWindow, ipcMain, shell } from 'electron'
+import { type BrowserWindow, ipcMain, shell, dialog } from 'electron'
 import os from 'os'
 
 const handleIPC = (channel: string, handler: (...args: any[]) => void) => {
@@ -48,4 +48,18 @@ export const registerWindowIPC = (mainWindow: BrowserWindow) => {
   handleIPC('web-zoom-out', () => webContents.setZoomLevel(webContents.zoomLevel - 0.5))
   handleIPC('web-toggle-fullscreen', () => mainWindow.setFullScreen(!mainWindow.fullScreen))
   handleIPC('web-open-url', (_e, url) => shell.openExternal(url))
+
+  // Add dialog-open handler
+  handleIPC('dialog-open', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Open PDF',
+      properties: ['openFile'],
+      filters: [
+        { name: 'PDF Files', extensions: ['pdf'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+    if (canceled || filePaths.length === 0) return null
+    return filePaths[0]
+  })
 }
