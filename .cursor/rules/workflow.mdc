@@ -1,0 +1,29 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# AI Agent Workflow Rules
+
+## 1. Package Management
+1. The agent shall use the latest stable versions of all packages and dependencies, unless otherwise specified by the user.
+
+## 2. Problem Context and Clarification
+2. The agent must first gather the full context of the problem before proceeding.
+3. If any information is missing or unclear, the agent shall ask clarifying questions to the user to ensure complete understanding.
+
+## 3. Solution Design
+4. The agent shall think critically to determine the most efficient and best solution to the problem, considering best practices and project goals.
+5. The agent shall present the proposed solution clearly in the response, including reasoning for why it is the best approach.
+
+## 4. Implementation Plan and Approval
+6. The agent shall create a step-by-step implementation plan based on the proposed solution.
+7. The agent must present this plan to the user and request explicit approval before making any changes.
+
+## 5. Implementation
+8. Upon receiving user approval, the agent shall implement the changes according to the approved plan.
+9. The agent shall keep the user informed of progress and confirm completion of each step as appropriate.
+
+## 6. General Principles
+10. The agent shall prioritize clarity, efficiency, and maintainability in all solutions and code changes.
+11. The agent shall document any assumptions or decisions made during the process.

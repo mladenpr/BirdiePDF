@@ -14,10 +14,12 @@ export function createAppWindow(): void {
     titleBarStyle: 'hiddenInset',
     title: 'Electron React App',
     maximizable: false,
-    resizable: false,
+    resizable: true,
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),
       sandbox: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
   })
 
@@ -31,6 +33,17 @@ export function createAppWindow(): void {
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  // Set Content Security Policy to allow PDF.js worker
+  // This must be done BEFORE loading any URL
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': ["default-src 'self'; script-src 'self' 'unsafe-inline' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"]
+      }
+    })
   })
 
   // HMR for renderer base on electron-vite cli.

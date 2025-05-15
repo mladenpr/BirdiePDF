@@ -1,4 +1,6 @@
 import '../styles/app.css'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import PDFViewer from '@/lib/components/PDFViewer'
 
 const iconStyle = {
   width: 22,
@@ -10,10 +12,136 @@ const iconStyle = {
 }
 
 export default function App() {
-  // Placeholder values for page and zoom
-  const page = 6
-  const totalPages = 10
-  const zoom = 100
+  const [pdfFile, setPdfFile] = useState<Blob | null>(null)
+  // State for page and zoom
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [zoom, setZoom] = useState(100)
+  const [viewMode, setViewMode] = useState<'default' | 'fullPage' | 'fullWidth'>('default')
+  const [isFullScreen, setIsFullScreen] = useState(false)
+  const currentFilePath = useRef<string | null>(null)
+  const saveAsRef = useRef<() => Promise<void>>(async () => {})
+
+  // Handler for page changes
+  const handlePageChange = useCallback((newPage: number) => {
+    setPage(prev => {
+      const validPage = Math.max(1, Math.min(newPage, totalPages))
+      return validPage
+    })
+  }, [totalPages])
+
+  // Handler for PDF loaded
+  const handlePdfLoaded = useCallback((pages: number) => {
+    setTotalPages(pages)
+    setPage(1) // Reset to first page when a new document is loaded
+  }, [])
+
+  // Handler for opening a file
+  const handleOpenFile = useCallback(async () => {
+    try {
+      const filePath = await window.api.invoke('dialog-open')
+      if (filePath) {
+        console.log('Selected file path:', filePath);
+        
+        // Request file Buffer from main process
+        const result = await window.api.invoke('read-pdf-file', filePath)
+        if (result && !result.error) {
+          console.log('File loaded successfully, buffer size:', result.byteLength);
+          
+          // Convert ArrayBuffer to Blob
+          const blob = new Blob([result], { type: 'application/pdf' })
+          console.log('Created blob:', blob.size, 'bytes', blob.type);
+          
+          setPdfFile(blob)
+          setPage(1)
+          currentFilePath.current = filePath
+        } else {
+          console.error('Failed to load PDF file:', result?.error);
+          alert('Failed to load PDF file: ' + (result?.error || 'Unknown error'))
+        }
+      }
+    } catch (error) {
+      console.error('Error opening file:', error);
+      alert(`Error opening file: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }, [])
+
+  // Handler for Save As
+  const handleSaveAs = useCallback(async () => {
+    if (!pdfFile) {
+      alert('No PDF file is currently open')
+      return
+    }
+    
+    try {
+      // Convert Blob to ArrayBuffer
+      const arrayBuffer = await pdfFile.arrayBuffer()
+      
+      // Call the dialog-save-as IPC handler
+      const result = await window.api.invoke('dialog-save-as', arrayBuffer)
+      
+      if (result && result.success) {
+        console.log('File saved successfully to:', result.filePath)
+        currentFilePath.current = result.filePath
+      } else if (result && result.error) {
+        alert(`Failed to save file: ${result.error}`)
+      }
+    } catch (error) {
+      alert(`Error saving file: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }, [pdfFile])
+
+  // Update saveAsRef when handleSaveAs changes
+  useEffect(() => {
+    saveAsRef.current = handleSaveAs
+  }, [handleSaveAs])
+  
+  // Handler for saving the current file
+  const handleSave = useCallback(async () => {
+    if (!pdfFile) {
+      alert('No PDF file is currently open')
+      return
+    }
+    
+    try {
+      // Convert Blob to ArrayBuffer
+      const arrayBuffer = await pdfFile.arrayBuffer()
+      
+      if (currentFilePath.current) {
+        // Save to existing file path
+        const result = await window.api.invoke('save-pdf-file', {
+          filePath: currentFilePath.current,
+          data: arrayBuffer
+        })
+        
+        if (result && result.success) {
+          console.log('File saved successfully')
+        } else if (result && result.error) {
+          alert(`Failed to save file: ${result.error}`)
+        }
+      } else {
+        // No current file path, use Save As dialog
+        await saveAsRef.current()
+      }
+    } catch (error) {
+      alert(`Error saving file: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }, [pdfFile])
+
+  // Toggle fullscreen
+  const toggleFullScreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`)
+      })
+      setIsFullScreen(true)
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen()
+        setIsFullScreen(false)
+      }
+    }
+  }, [])
 
   return (
     <div style={{ width: '100%', background: '#f8f9fa', display: 'flex', flexDirection: 'column', flex: 1 }}>
@@ -28,23 +156,17 @@ export default function App() {
         minHeight: 48,
         fontFamily: 'inherit',
       }}>
-        <CommandButton title="Open" onClick={async () => {
-          const filePath = await window.api.invoke('dialog-open')
-          if (filePath) {
-            console.log('Selected file:', filePath)
-            // TODO: Load and display the PDF
-          }
-        }}>
+        <CommandButton title="Open" onClick={handleOpenFile}>
           <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 3v4M8 3v4M12 12v-4M12 12l-3-3M12 12l3-3"/></svg>
         </CommandButton>
-        <CommandButton title="Save">
+        <CommandButton title="Save" onClick={handleSave}>
           <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M16 3v4H8V3"/><rect x="8" y="15" width="8" height="4" rx="1"/></svg>
         </CommandButton>
-        <CommandButton title="Save As">
+        <CommandButton title="Save As" onClick={handleSaveAs}>
           <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 17v-6M9 14l3 3 3-3"/></svg>
         </CommandButton>
         <Divider />
-        <CommandButton title="Previous Page">
+        <CommandButton title="Previous Page" onClick={() => handlePageChange(page - 1)}>
           <svg style={iconStyle} viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
         </CommandButton>
         <input
@@ -52,7 +174,7 @@ export default function App() {
           min={1}
           max={totalPages}
           value={page}
-          readOnly
+          onChange={(e) => handlePageChange(parseInt(e.target.value) || 1)}
           style={{
             width: 40,
             textAlign: 'center',
@@ -69,32 +191,82 @@ export default function App() {
           }}
         />
         <span style={{ color: '#888', fontSize: 16, marginRight: 6 }}>/ {totalPages}</span>
-        <CommandButton title="Next Page">
+        <CommandButton title="Next Page" onClick={() => handlePageChange(page + 1)}>
           <svg style={iconStyle} viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg>
         </CommandButton>
         <Divider />
-        <CommandButton title="Zoom Out">
+        <CommandButton title="Zoom Out" onClick={() => setZoom(prev => Math.max(25, prev - 25))}>
           <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
         </CommandButton>
         <span style={{ color: '#222', fontSize: 16, minWidth: 48, textAlign: 'center' }}>{zoom}%</span>
-        <CommandButton title="Zoom In">
+        <CommandButton title="Zoom In" onClick={() => setZoom(prev => Math.min(400, prev + 25))}>
           <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg>
         </CommandButton>
+        <Divider />
+        <CommandButton 
+          title="Full Page View" 
+          onClick={() => setViewMode(prev => prev === 'fullPage' ? 'default' : 'fullPage')}
+          active={viewMode === 'fullPage'}
+        >
+          <svg style={iconStyle} viewBox="0 0 24 24">
+            <rect x="4" y="4" width="16" height="16" rx="1"/>
+            <path d="M4 12h16"/>
+          </svg>
+        </CommandButton>
+        <CommandButton 
+          title="Full Width View" 
+          onClick={() => setViewMode(prev => prev === 'fullWidth' ? 'default' : 'fullWidth')}
+          active={viewMode === 'fullWidth'}
+        >
+          <svg style={iconStyle} viewBox="0 0 24 24">
+            <rect x="3" y="6" width="18" height="12" rx="1"/>
+            <path d="M3 12h18"/>
+          </svg>
+        </CommandButton>
+        <CommandButton 
+          title="Full Screen" 
+          onClick={toggleFullScreen}
+          active={isFullScreen}
+        >
+          <svg style={iconStyle} viewBox="0 0 24 24">
+            <path d="M3 3h6v6m6-6h6v6m-6 6h6v6m-12 0h6v-6"/>
+            {isFullScreen && <path d="M20 14v-4M14 20h-4M4 14v-4M14 4h-4"/>}
+          </svg>
+        </CommandButton>
       </div>
-      {/* PDF Viewer placeholder */}
+      {/* PDF Viewer */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 24, background: '#f8f9fa' }}>
-        PDF Viewer Area
+        {pdfFile
+          ? <PDFViewer 
+              file={pdfFile} 
+              currentPage={page}
+              zoom={zoom / 100}
+              viewMode={viewMode}
+              onPageChange={handlePageChange}
+              onDocumentLoaded={handlePdfLoaded}
+            />
+          : 'PDF Viewer Area'}
       </div>
     </div>
   )
 }
 
-function CommandButton({ children, title, onClick }: { children: React.ReactNode, title: string, onClick?: () => void }) {
+function CommandButton({ 
+  children, 
+  title, 
+  onClick,
+  active = false 
+}: { 
+  children: React.ReactNode, 
+  title: string, 
+  onClick?: () => void,
+  active?: boolean
+}) {
   return (
     <button
       title={title}
       style={{
-        background: 'none',
+        background: active ? '#e1e6f0' : 'none',
         border: 'none',
         borderRadius: 8,
         padding: '6px 10px',
@@ -108,8 +280,8 @@ function CommandButton({ children, title, onClick }: { children: React.ReactNode
         transition: 'background 0.15s',
         outline: 'none',
       }}
-      onMouseOver={e => (e.currentTarget.style.background = '#ececec')}
-      onMouseOut={e => (e.currentTarget.style.background = 'none')}
+      onMouseOver={e => !active && (e.currentTarget.style.background = '#ececec')}
+      onMouseOut={e => !active && (e.currentTarget.style.background = 'none')}
       onClick={onClick}
     >
       {children}

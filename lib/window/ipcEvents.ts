@@ -1,5 +1,6 @@
 import { type BrowserWindow, ipcMain, shell, dialog } from 'electron'
 import os from 'os'
+import fs from 'fs/promises'
 
 const handleIPC = (channel: string, handler: (...args: any[]) => void) => {
   ipcMain.handle(channel, handler)
@@ -61,5 +62,48 @@ export const registerWindowIPC = (mainWindow: BrowserWindow) => {
     })
     if (canceled || filePaths.length === 0) return null
     return filePaths[0]
+  })
+
+  // Add dialog-save-as handler
+  handleIPC('dialog-save-as', async (_event, data: ArrayBuffer) => {
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save PDF As',
+      defaultPath: 'document.pdf',
+      filters: [
+        { name: 'PDF Files', extensions: ['pdf'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+    
+    if (canceled || !filePath) return { success: false }
+    
+    try {
+      const buffer = Buffer.from(data)
+      await fs.writeFile(filePath, buffer)
+      return { success: true, filePath }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Add save-pdf-file handler
+  handleIPC('save-pdf-file', async (_event, { filePath, data }: { filePath: string, data: ArrayBuffer }) => {
+    try {
+      const buffer = Buffer.from(data)
+      await fs.writeFile(filePath, buffer)
+      return { success: true, filePath }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Add read-pdf-file handler
+  handleIPC('read-pdf-file', async (_event, filePath: string) => {
+    try {
+      const data = await fs.readFile(filePath)
+      return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
   })
 }

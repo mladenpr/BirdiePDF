@@ -2,6 +2,7 @@ import { resolve } from 'path'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
   main: {
@@ -45,6 +46,11 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'app/index.html'),
         },
+        output: {
+          manualChunks: {
+            pdfjs: ['pdfjs-dist', 'react-pdf']
+          }
+        }
       },
     },
     resolve: {
@@ -54,6 +60,24 @@ export default defineConfig({
         '@/resources': resolve(__dirname, 'resources'),
       },
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(), 
+      tailwindcss(),
+      viteStaticCopy({
+        targets: [
+          {
+            src: resolve(__dirname, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'),
+            dest: '' // Copies to the root of the output directory
+          }
+        ]
+      })
+    ],
+    publicDir: 'public',
+    server: {
+      fs: {
+        // Allow serving files from one level up to the project root
+        allow: ['..'],
+      },
+    },
   },
 })
