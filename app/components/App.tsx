@@ -22,13 +22,17 @@ export default function App() {
   const currentFilePath = useRef<string | null>(null)
   const saveAsRef = useRef<() => Promise<void>>(async () => {})
 
-  // Handler for page changes
+  // Handler for page changes (used by input, prev/next buttons, and PDFViewer scroll detection)
   const handlePageChange = useCallback((newPage: number) => {
-    setPage(prev => {
-      const validPage = Math.max(1, Math.min(newPage, totalPages))
-      return validPage
-    })
-  }, [totalPages])
+    setPage(prevPage => {
+      const validPage = Math.max(1, Math.min(newPage, totalPages || 1));
+      // Only update if the page actually changes to avoid potential loops
+      if (validPage !== prevPage) {
+        return validPage;
+      }
+      return prevPage;
+    });
+  }, [totalPages]);
 
   // Handler for PDF loaded
   const handlePdfLoaded = useCallback((pages: number) => {
@@ -176,7 +180,7 @@ export default function App() {
           value={page}
           onChange={(e) => handlePageChange(parseInt(e.target.value) || 1)}
           style={{
-            width: 40,
+            width: 60,
             textAlign: 'center',
             background: '#fff',
             border: '1px solid #e5e7eb',
@@ -235,17 +239,30 @@ export default function App() {
         </CommandButton>
       </div>
       {/* PDF Viewer */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 24, background: '#f8f9fa' }}>
-        {pdfFile
-          ? <PDFViewer 
-              file={pdfFile} 
-              currentPage={page}
-              zoom={zoom / 100}
-              viewMode={viewMode}
-              onPageChange={handlePageChange}
-              onDocumentLoaded={handlePdfLoaded}
-            />
-          : 'PDF Viewer Area'}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'auto',
+          background: '#f8f9fa',
+          minHeight: 0,
+          width: '100%',
+          height: '100%',
+        }}
+      >
+        {pdfFile ? (
+          <PDFViewer
+            file={pdfFile}
+            zoom={zoom / 100}
+            viewMode={viewMode}
+            onDocumentLoaded={handlePdfLoaded}
+            scrollToPageNumber={page}
+            onVisiblePageChanged={handlePageChange}
+          />
+        ) : (
+          'PDF Viewer Area'
+        )}
       </div>
     </div>
   )
