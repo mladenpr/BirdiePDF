@@ -141,17 +141,35 @@ export default function App() {
   // Toggle fullscreen
   const toggleFullScreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(err => {
+      pdfViewerContainerRef.current?.requestFullscreen().catch(err => {
         console.error(`Error attempting to enable full-screen mode: ${err.message}`)
-      })
-      setIsFullScreen(true)
+      });
     } else {
       if (document.exitFullscreen) {
-        document.exitFullscreen()
-        setIsFullScreen(false)
+        document.exitFullscreen();
       }
     }
-  }, [])
+  }, [pdfViewerContainerRef]);
+
+  // Effect to handle fullscreen changes (e.g. ESC key, or API call)
+  useEffect(() => {
+    const handleFullScreenChange = () => {
+      const currentlyFullScreen = !!document.fullscreenElement;
+      setIsFullScreen(currentlyFullScreen);
+      if (currentlyFullScreen) {
+        // Entered fullscreen
+        setViewMode('calculatingFitPage');
+      } else {
+        // Exited fullscreen
+        setViewMode('calculatingFitWidth'); // Adjust to fit width in normal view
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullScreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullScreenChange);
+    };
+  }, [setViewMode]);
 
   // Simplified handleWheelZoom, as viewMode change is now handled by explicit button clicks leading to onOptimalScaleCalculated
   const handleWheelZoom = useCallback((event: WheelEvent) => {
@@ -233,116 +251,118 @@ export default function App() {
   };
 
   return (
-    <div style={{ width: '100%', background: '#f8f9fa', display: 'flex', flexDirection: 'column', flex: 1 }}>
+    <div style={{ width: '100%', background: '#f8f9fa', display: 'flex', flexDirection: 'column', flex: 1, height: '100vh', overflow: 'hidden' }}>
       {/* Command Palette */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 0,
-        padding: '10px 24px 10px 24px',
-        borderBottom: '1px solid #e5e7eb',
-        background: '#f8f9fa',
-        minHeight: 48,
-        fontFamily: 'inherit',
-      }}>
-        <CommandButton title="Open" onClick={handleOpenFile}>
-          <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 3v4M8 3v4M12 12v-4M12 12l-3-3M12 12l3-3"/></svg>
-        </CommandButton>
-        <CommandButton title="Save" onClick={handleSave}>
-          <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M16 3v4H8V3"/><rect x="8" y="15" width="8" height="4" rx="1"/></svg>
-        </CommandButton>
-        <CommandButton title="Save As" onClick={handleSaveAs}>
-          <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 17v-6M9 14l3 3 3-3"/></svg>
-        </CommandButton>
-        <Divider />
-        <CommandButton title="Previous Page" onClick={() => handlePageChange(page - 1)}>
-          <svg style={iconStyle} viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-        </CommandButton>
-        <input
-          type="number"
-          min={1}
-          max={totalPages}
-          value={page}
-          onChange={(e) => handlePageChange(parseInt(e.target.value) || 1)}
-          style={{
-            width: 60,
-            textAlign: 'center',
-            background: '#fff',
-            border: '1px solid #e5e7eb',
-            color: '#222',
-            borderRadius: 8,
-            fontSize: 16,
-            margin: '0 6px',
-            padding: '4px 0',
-            outline: 'none',
-            boxShadow: 'none',
-            height: 32,
-          }}
-        />
-        <span style={{ color: '#888', fontSize: 16, marginRight: 6 }}>/ {totalPages}</span>
-        <CommandButton title="Next Page" onClick={() => handlePageChange(page + 1)}>
-          <svg style={iconStyle} viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg>
-        </CommandButton>
-        <Divider />
-        <CommandButton title="Zoom Out" onClick={() => setZoom(prev => Math.max(25, prev - 25))}>
-          <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
-        </CommandButton>
-        <input
-          type="text"
-          value={zoomInput}
-          onChange={handleZoomInputChange}
-          onBlur={handleZoomInputBlur}
-          onKeyDown={handleZoomInputKeyDown}
-          style={{
-            width: 45, // Adjusted width for 3 digits + potentially a bit more
-            textAlign: 'center',
-            background: '#fff',
-            border: '1px solid #e5e7eb',
-            color: '#222',
-            borderRadius: 8,
-            fontSize: 16,
-            margin: '0 0 0 6px', // Margin adjusted to accommodate % sign
-            padding: '4px 0',
-            outline: 'none',
-            boxShadow: 'none',
-            height: 32,
-          }}
-        />
-        <span style={{ color: '#222', fontSize: 16, margin: '0 6px 0 2px' }}>%</span>
-        <CommandButton title="Zoom In" onClick={() => setZoom(prev => Math.min(400, prev + 25))}>
-          <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg>
-        </CommandButton>
-        <Divider />
-        <CommandButton 
-          title="Fit Page" 
-          onClick={handleFitPageClick}
-        >
-          <svg style={iconStyle} viewBox="0 0 24 24">
-            <rect x="4" y="4" width="16" height="16" rx="1"/>
-            <polyline points="4 12 4 4 12 4" />
-            <polyline points="20 12 20 20 12 20" />
-          </svg>
-        </CommandButton>
-        <CommandButton 
-          title="Full Width View" 
-          onClick={handleFitWidthClick}
-        >
-          <svg style={iconStyle} viewBox="0 0 24 24">
-            <rect x="3" y="6" width="18" height="12" rx="1"/>
-            <path d="M3 12h18"/>
-          </svg>
-        </CommandButton>
-        <CommandButton 
-          title="Full Screen" 
-          onClick={toggleFullScreen}
-          active={isFullScreen}
-        >
-          <svg style={iconStyle} viewBox="0 0 24 24">
-            <path d="M3 3h6v6m6-6h6v6m-6 6h6v6m-12 0h6v-6"/>
-            {isFullScreen && <path d="M20 14v-4M14 20h-4M4 14v-4M14 4h-4"/>}
-          </svg>
-        </CommandButton>
-      </div>
+      { !isFullScreen && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0,
+          padding: '10px 24px 10px 24px',
+          borderBottom: '1px solid #e5e7eb',
+          background: '#f8f9fa',
+          minHeight: 48,
+          fontFamily: 'inherit',
+        }}>
+          <CommandButton title="Open" onClick={handleOpenFile}>
+            <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 3v4M8 3v4M12 12v-4M12 12l-3-3M12 12l3-3"/></svg>
+          </CommandButton>
+          <CommandButton title="Save" onClick={handleSave}>
+            <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M16 3v4H8V3"/><rect x="8" y="15" width="8" height="4" rx="1"/></svg>
+          </CommandButton>
+          <CommandButton title="Save As" onClick={handleSaveAs}>
+            <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 17v-6M9 14l3 3 3-3"/></svg>
+          </CommandButton>
+          <Divider />
+          <CommandButton title="Previous Page" onClick={() => handlePageChange(page - 1)}>
+            <svg style={iconStyle} viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          </CommandButton>
+          <input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={page}
+            onChange={(e) => handlePageChange(parseInt(e.target.value) || 1)}
+            style={{
+              width: 60,
+              textAlign: 'center',
+              background: '#fff',
+              border: '1px solid #e5e7eb',
+              color: '#222',
+              borderRadius: 8,
+              fontSize: 16,
+              margin: '0 6px',
+              padding: '4px 0',
+              outline: 'none',
+              boxShadow: 'none',
+              height: 32,
+            }}
+          />
+          <span style={{ color: '#888', fontSize: 16, marginRight: 6 }}>/ {totalPages}</span>
+          <CommandButton title="Next Page" onClick={() => handlePageChange(page + 1)}>
+            <svg style={iconStyle} viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg>
+          </CommandButton>
+          <Divider />
+          <CommandButton title="Zoom Out" onClick={() => setZoom(prev => Math.max(25, prev - 25))}>
+            <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+          </CommandButton>
+          <input
+            type="text"
+            value={zoomInput}
+            onChange={handleZoomInputChange}
+            onBlur={handleZoomInputBlur}
+            onKeyDown={handleZoomInputKeyDown}
+            style={{
+              width: 45, // Adjusted width for 3 digits + potentially a bit more
+              textAlign: 'center',
+              background: '#fff',
+              border: '1px solid #e5e7eb',
+              color: '#222',
+              borderRadius: 8,
+              fontSize: 16,
+              margin: '0 0 0 6px', // Margin adjusted to accommodate % sign
+              padding: '4px 0',
+              outline: 'none',
+              boxShadow: 'none',
+              height: 32,
+            }}
+          />
+          <span style={{ color: '#222', fontSize: 16, margin: '0 6px 0 2px' }}>%</span>
+          <CommandButton title="Zoom In" onClick={() => setZoom(prev => Math.min(400, prev + 25))}>
+            <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg>
+          </CommandButton>
+          <Divider />
+          <CommandButton 
+            title="Fit Page" 
+            onClick={handleFitPageClick}
+          >
+            <svg style={iconStyle} viewBox="0 0 24 24">
+              <rect x="4" y="4" width="16" height="16" rx="1"/>
+              <polyline points="4 12 4 4 12 4" />
+              <polyline points="20 12 20 20 12 20" />
+            </svg>
+          </CommandButton>
+          <CommandButton 
+            title="Full Width View" 
+            onClick={handleFitWidthClick}
+          >
+            <svg style={iconStyle} viewBox="0 0 24 24">
+              <rect x="3" y="6" width="18" height="12" rx="1"/>
+              <path d="M3 12h18"/>
+            </svg>
+          </CommandButton>
+          <CommandButton 
+            title="Full Screen" 
+            onClick={toggleFullScreen}
+            active={isFullScreen}
+          >
+            <svg style={iconStyle} viewBox="0 0 24 24">
+              <path d="M3 3h6v6m6-6h6v6m-6 6h6v6m-12 0h6v-6"/>
+              {isFullScreen && <path d="M20 14v-4M14 20h-4M4 14v-4M14 4h-4"/>}
+            </svg>
+          </CommandButton>
+        </div>
+      )}
       {/* PDF Viewer */}
       <div
         ref={pdfViewerContainerRef} // Assign ref here
@@ -351,10 +371,10 @@ export default function App() {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'auto',
-          background: '#f8f9fa',
+          background: isFullScreen ? '#000' : '#f8f9fa', // Optional: darker background in full screen
           minHeight: 0,
           width: '100%',
-          height: '100%',
+          height: '100%', // Ensure this takes full height of its parent
         }}
       >
         {pdfFile ? (
