@@ -11,7 +11,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 console.log('PDF.js worker path:', pdfjs.GlobalWorkerOptions.workerSrc);
 console.log('PDF.js version:', pdfjs.version);
 
-const PAGES_TO_PRELOAD_BUFFER = 2; // Number of pages to preload before and after the visible ones
+const PAGES_TO_PRELOAD_BUFFER = 3; // Number of pages to preload before and after the visible ones
 
 interface VisiblePageInfo {
   pageNumber: number;
@@ -22,20 +22,24 @@ export interface PDFViewerProps {
   file: string | Blob
   zoom?: number
   viewMode?: 'default' | 'calculatingFitPage' | 'calculatingFitWidth'
+  calculationTargetDimensions?: { width: number; height: number } | null;
   onDocumentLoaded?: (pages: number) => void
   scrollToPageNumber?: number
   onVisiblePageChanged?: (pageNumber: number) => void
   onOptimalScaleCalculated?: (scale: number) => void
+  singlePageView?: boolean
 }
 
 const PDFViewer = ({ 
   file,
   zoom = 1,
   viewMode = 'default',
+  calculationTargetDimensions = null,
   onDocumentLoaded,
   scrollToPageNumber,
   onVisiblePageChanged,
-  onOptimalScaleCalculated
+  onOptimalScaleCalculated,
+  singlePageView = false
 }: PDFViewerProps) => {
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageContainerSize, setPageContainerSize] = useState<{ width?: number; height?: number }>({});
@@ -97,38 +101,33 @@ const PDFViewer = ({
   // Calculate and report optimal scale for 'calculatingFitWidth' mode
   useEffect(() => {
     if (
-      viewMode === 'calculatingFitWidth' && // UPDATED
-      pageContainerRef.current &&
+      viewMode === 'calculatingFitWidth' &&
       onOptimalScaleCalculated
     ) {
-      // Always use the current page or page 1
       const pageToUse = scrollToPageNumber || 1;
       const pageDimensions = originalPageDimensionsRef.current[pageToUse];
-      if (pageDimensions?.width) {
-        const containerWidth = pageContainerRef.current.clientWidth;
-        const pageOriginalWidth = pageDimensions.width;
-        if (containerWidth > 0 && pageOriginalWidth > 0) {
-          console.log('PDFViewer: Calculating optimal scale for full width', {containerWidth, pageOriginalWidth, pageToUse});
-          const fitScale = containerWidth / pageOriginalWidth;
+      const containerWidth = calculationTargetDimensions?.width || pageContainerRef.current?.clientWidth;
+
+      if (pageDimensions?.width && containerWidth) {
+        if (containerWidth > 0 && pageDimensions.width > 0) {
+          console.log('PDFViewer: Calculating optimal scale for full width', {containerWidth, pageOriginalWidth: pageDimensions.width, pageToUse});
+          const fitScale = containerWidth / pageDimensions.width;
           onOptimalScaleCalculated(fitScale);
         } else {
           console.log('PDFViewer: Using default scale (1) for full width due to invalid dimensions');
           onOptimalScaleCalculated(1);
         }
       } else {
-        // Retry if dimensions are not available yet
-        console.log('PDFViewer: Page dimensions not available yet, waiting before retrying');
         const timeoutId = setTimeout(() => {
-          if (viewMode === 'calculatingFitWidth' && pageContainerRef.current) {
-            const containerWidth = pageContainerRef.current.clientWidth;
+          if (viewMode === 'calculatingFitWidth' && onOptimalScaleCalculated) {
+            const laterContainerWidth = calculationTargetDimensions?.width || pageContainerRef.current?.clientWidth;
             const laterPageDimensions = originalPageDimensionsRef.current[pageToUse];
-            const pageOriginalWidth = laterPageDimensions?.width;
-            if (containerWidth > 0 && pageOriginalWidth && pageOriginalWidth > 0) {
-              console.log('PDFViewer: Retry successful - calculating optimal scale');
-              const fitScale = containerWidth / pageOriginalWidth;
+            if (laterContainerWidth && laterPageDimensions?.width && laterPageDimensions.width > 0) {
+              console.log('PDFViewer: Retry successful - calculating optimal scale for fitWidth');
+              const fitScale = laterContainerWidth / laterPageDimensions.width;
               onOptimalScaleCalculated(fitScale);
             } else {
-              console.log('PDFViewer: Using fallback scale (1) after retry');
+              console.log('PDFViewer: Using fallback scale (1) for fitWidth after retry');
               onOptimalScaleCalculated(1);
             }
           }
@@ -136,61 +135,58 @@ const PDFViewer = ({
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [viewMode, scrollToPageNumber, onOptimalScaleCalculated, originalPageDimensionsRef, pageContainerSize.width, file, numPages]); // Added pageContainerSize.width, file, numPages
+  }, [viewMode, scrollToPageNumber, onOptimalScaleCalculated, originalPageDimensionsRef, pageContainerSize.width, calculationTargetDimensions, file, numPages]);
 
   // Calculate and report optimal scale for 'calculatingFitPage' mode
   useEffect(() => {
     if (
-      viewMode === 'calculatingFitPage' && // UPDATED
-      pageContainerSize.width && 
-      pageContainerSize.height &&
-      originalPageDimensionsRef.current &&
+      viewMode === 'calculatingFitPage' &&
       onOptimalScaleCalculated
     ) {
+      const targetWidth = calculationTargetDimensions?.width || pageContainerSize.width;
+      const targetHeight = calculationTargetDimensions?.height || pageContainerSize.height;
       const pageToUse = scrollToPageNumber || 1;
       const pageDimensions = originalPageDimensionsRef.current[pageToUse];
 
-      if (pageDimensions?.width && pageDimensions?.width > 0 && pageDimensions?.height && pageDimensions?.height > 0) {
-        const scaleX = pageContainerSize.width / pageDimensions.width;
-        const scaleY = pageContainerSize.height / pageDimensions.height;
+      if (targetWidth && targetHeight && pageDimensions?.width && pageDimensions?.height && pageDimensions.width > 0 && pageDimensions.height > 0) {
+        const scaleX = targetWidth / pageDimensions.width;
+        const scaleY = targetHeight / pageDimensions.height;
         const fitScale = Math.min(scaleX, scaleY);
         
-        // Prevent extremely small scales if container is tiny or page huge unexpectedly
         if (fitScale > 0.01) {
-          console.log('PDFViewer: Calculating optimal scale for full page', { fitScale, pageToUse, pageContainerSize, pageDimensions });
+          console.log('PDFViewer: Calculating optimal scale for full page', { fitScale, pageToUse, targetWidth, targetHeight, pageDimensions });
           onOptimalScaleCalculated(fitScale);
         } else {
           console.warn('PDFViewer: Calculated fitScale for fullPage is too small, defaulting to 1', { fitScale });
-          onOptimalScaleCalculated(1); // Fallback for excessively small scale
+          onOptimalScaleCalculated(1);
         }
-      } else if (pageDimensions) { // Dimensions exist but might be zero
-          console.warn('PDFViewer: Using default scale (1) for full page due to zero page dimension(s) for page', pageToUse);
+      } else if (pageDimensions) {
+          console.warn('PDFViewer: Using default scale (1) for full page due to zero/missing dimension(s) for page', pageToUse, {targetWidth, targetHeight});
           onOptimalScaleCalculated(1);
       } else {
-        // Optional: Retry logic if pageDimensions are not yet available.
-        // This might be needed if this effect runs before Page's onLoadSuccess.
-        console.warn(`PDFViewer: fullPage mode, but original dimensions for page ${pageToUse} are not available. Consider retry or fallback.`);
-        // Fallback if dimensions are missing, to ensure callback still fires.
+        console.warn(`PDFViewer: fullPage mode, but original dimensions for page ${pageToUse} are not available. Retrying.`);
         const timeoutId = setTimeout(() => {
            if (viewMode === 'calculatingFitPage' && onOptimalScaleCalculated) { // Check viewMode again inside timeout
+            const freshTargetWidth = calculationTargetDimensions?.width || pageContainerSize.width;
+            const freshTargetHeight = calculationTargetDimensions?.height || pageContainerSize.height;
             const freshPageDimensions = originalPageDimensionsRef.current[pageToUse];
-            if (freshPageDimensions?.width && freshPageDimensions?.width > 0 && freshPageDimensions?.height && freshPageDimensions?.height > 0 && pageContainerSize.width && pageContainerSize.height) {
-              const scaleX = pageContainerSize.width / freshPageDimensions.width;
-              const scaleY = pageContainerSize.height / freshPageDimensions.height;
+            if (freshTargetWidth && freshTargetHeight && freshPageDimensions?.width && freshPageDimensions.width > 0 && freshPageDimensions?.height && freshPageDimensions.height > 0) {
+              const scaleX = freshTargetWidth / freshPageDimensions.width;
+              const scaleY = freshTargetHeight / freshPageDimensions.height;
               const fitScale = Math.min(scaleX, scaleY);
               if (fitScale > 0.01) {
                 onOptimalScaleCalculated(fitScale);
               } else { onOptimalScaleCalculated(1); }
             } else {
-              console.warn('PDFViewer: Fallback to scale 1 for fullPage after retry, dimensions still missing/invalid for page', pageToUse);
+              console.warn('PDFViewer: Fallback to scale 1 for fullPage after retry, dimensions still missing/invalid for page', pageToUse, {freshTargetWidth, freshTargetHeight});
               onOptimalScaleCalculated(1);
             }
            }
-        },150); // Slightly longer timeout for this retry
+        },150); 
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [viewMode, pageContainerSize, scrollToPageNumber, onOptimalScaleCalculated, originalPageDimensionsRef, numPages, file]); // Added numPages/file to help re-trigger if document changes
+  }, [viewMode, pageContainerSize, scrollToPageNumber, onOptimalScaleCalculated, originalPageDimensionsRef, calculationTargetDimensions, numPages, file]);
 
   function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
     console.log('PDF loaded successfully with', numPages, 'pages');
@@ -387,23 +383,24 @@ const PDFViewer = ({
       display: 'flex', 
       flexDirection: 'column', 
       alignItems: 'center', 
-      marginTop: 16,
+      marginTop: singlePageView ? 0 : 4,
       width: '100%',
       height: '100%',
-      overflow: 'auto'
+      overflow: 'auto',
+      justifyContent: singlePageView ? 'center' : undefined,
     }}>
       <div 
         ref={pageContainerRef}
         style={{ 
-        border: '1px solid #ccc', 
-        borderRadius: 4, 
+        border: singlePageView ? 'none' : '0px solid #ccc',
+        borderRadius: singlePageView ? 0 : 4,
         overflow: 'auto', 
-        background: '#f8f9fa',
+        background: singlePageView ? 'transparent' : '#f8f9fa',
         height: '100%',
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'flex-start',
+        justifyContent: singlePageView ? 'center' : 'flex-start',
         alignItems: 'center',
       }}>
         {loadError ? (
@@ -418,51 +415,79 @@ const PDFViewer = ({
             onLoadError={onDocumentLoadError}
             loading={<div style={{ color: 'white', padding: '20px' }}>Loading PDF...</div>}
           >
-            {Array.from({ length: numPages || 0 }, (_, i) => {
-               const pageNumber = i + 1;
-               const pageProps = getDynamicPageProps();
-               return (
-                 <div 
-                   key={pageNumber} 
-                   style={{ margin: '24px 0', minHeight: '500px' /* Placeholder height */ }}
-                   ref={(el: HTMLDivElement | null) => { pageRefs.current[pageNumber] = el; }}
-                   data-page-number={pageNumber}
-                 >
-                   {renderedPages.has(pageNumber) ? (
-                     <Page
-                       pageNumber={pageNumber}
-                       width={pageProps.width}
-                       height={pageProps.height}
-                       scale={pageProps.scale}
-                       renderTextLayer={true}
-                       renderAnnotationLayer={true}
-                       onLoadSuccess={(pageData) => {
-                         if (originalPageDimensionsRef.current) {
-                           originalPageDimensionsRef.current[pageNumber] = {
-                             width: pageData.originalWidth,
-                             height: pageData.originalHeight,
-                           };
-                         }
-                         // If this is the current page in fullWidth mode, might need to trigger scale calculation again
-                         // This can be complex if this callback triggers the effect that calls onOptimalScaleCalculated.
-                         // For now, the effect reacting to scrollToPageNumber and originalPageDimensionsRef.current changes should cover it.
-                       }}
-                     />
-                   ) : (
-                     <div style={{ 
-                       display: 'flex', 
-                       justifyContent: 'center', 
-                       alignItems: 'center', 
-                       height: '100%', 
-                       minHeight: '500px', /* Match approx page height */
-                       color: 'grey' 
-                     }}>
-                       Loading page {pageNumber}...
-                     </div>
-                   )}
-                 </div>
-               );
-            })}
+            {singlePageView
+              ? (() => {
+                  const pageNumber = scrollToPageNumber || 1;
+                  const pageProps = getDynamicPageProps();
+                  return (
+                    <div 
+                      key={pageNumber} 
+                      style={{ margin: 0, minHeight: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}
+                      ref={(el: HTMLDivElement | null) => { pageRefs.current[pageNumber] = el; }}
+                      data-page-number={pageNumber}
+                    >
+                      <Page
+                        pageNumber={pageNumber}
+                        width={pageProps.width}
+                        height={pageProps.height}
+                        scale={pageProps.scale}
+                        renderTextLayer={true}
+                        renderAnnotationLayer={true}
+                        onLoadSuccess={(pageData) => {
+                          if (originalPageDimensionsRef.current) {
+                            originalPageDimensionsRef.current[pageNumber] = {
+                              width: pageData.originalWidth,
+                              height: pageData.originalHeight,
+                            };
+                          }
+                        }}
+                      />
+                    </div>
+                  );
+                })()
+              : Array.from({ length: numPages || 0 }, (_, i) => {
+                  const pageNumber = i + 1;
+                  const pageProps = getDynamicPageProps();
+                  return (
+                    <div 
+                      key={pageNumber} 
+                      style={{ margin: '4px 0', minHeight: '500px' }}
+                      ref={(el: HTMLDivElement | null) => { pageRefs.current[pageNumber] = el; }}
+                      data-page-number={pageNumber}
+                    >
+                      {renderedPages.has(pageNumber) ? (
+                        <Page
+                          pageNumber={pageNumber}
+                          width={pageProps.width}
+                          height={pageProps.height}
+                          scale={pageProps.scale}
+                          renderTextLayer={true}
+                          renderAnnotationLayer={true}
+                          onLoadSuccess={(pageData) => {
+                            if (originalPageDimensionsRef.current) {
+                              originalPageDimensionsRef.current[pageNumber] = {
+                                width: pageData.originalWidth,
+                                height: pageData.originalHeight,
+                              };
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'center', 
+                          alignItems: 'center', 
+                          height: '100%', 
+                          minHeight: '500px',
+                          color: 'grey' 
+                        }}>
+                          Loading page {pageNumber}...
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+            }
           </Document>
         )}
       </div>

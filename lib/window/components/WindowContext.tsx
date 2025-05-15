@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, Dispatch, SetStateAction } from 'react'
 import { Titlebar } from './Titlebar'
 import type { TitlebarMenu } from '../titlebarMenus'
 import { TitlebarContextProvider } from './TitlebarContext'
@@ -6,6 +6,8 @@ import { TitlebarContextProvider } from './TitlebarContext'
 interface WindowContextProps {
   titlebar: TitlebarProps
   readonly window: WindowInitProps
+  isFullScreen: boolean
+  setIsFullScreen: Dispatch<SetStateAction<boolean>>
 }
 
 interface WindowInitProps {
@@ -32,6 +34,7 @@ const WindowContext = createContext<WindowContextProps | undefined>(undefined)
 
 export const WindowContextProvider = ({ children, titlebar }: WindowContextProviderProps) => {
   const [initProps, setInitProps] = useState<WindowInitProps | undefined>()
+  const [isFullScreen, setIsFullScreen] = useState(false)
 
   const defaultTitlebar: TitlebarProps = {
     title: 'Electron React App',
@@ -54,13 +57,19 @@ export const WindowContextProvider = ({ children, titlebar }: WindowContextProvi
     }
   }, [])
 
+  if (!initProps) {
+    return null
+  }
+
   return (
-    <WindowContext value={{ titlebar, window: initProps! }}>
-      <TitlebarContextProvider>
-        <Titlebar />
-      </TitlebarContextProvider>
+    <WindowContext.Provider value={{ titlebar, window: initProps, isFullScreen, setIsFullScreen }}>
+      {!isFullScreen && (
+        <TitlebarContextProvider>
+          <Titlebar />
+        </TitlebarContextProvider>
+      )}
       <WindowContent>{children}</WindowContent>
-    </WindowContext>
+    </WindowContext.Provider>
   )
 }
 
@@ -72,6 +81,9 @@ export const useWindowContext = () => {
   const context = useContext(WindowContext)
   if (context === undefined) {
     throw new Error('useWindowContext must be used within a WindowContextProvider')
+  }
+  if (!context.window) {
+    console.warn("useWindowContext called before window initProps are available.")
   }
   return context
 }

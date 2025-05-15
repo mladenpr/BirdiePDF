@@ -12,8 +12,10 @@ export function createAppWindow(): void {
     icon: appIcon,
     frame: false,
     titleBarStyle: 'hiddenInset',
-    title: 'Electron React App',
-    maximizable: false,
+    title: 'BirdiePDF',
+    maximizable: true,
+    fullscreenable: true,
+    autoHideMenuBar: true,
     resizable: true,
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),

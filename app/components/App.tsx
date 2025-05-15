@@ -1,6 +1,7 @@
 import '../styles/app.css'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import PDFViewer from '@/lib/components/PDFViewer'
+import { useWindowContext } from '@/lib/window/components/WindowContext';
 
 const iconStyle = {
   width: 22,
@@ -18,8 +19,9 @@ export default function App() {
   const [totalPages, setTotalPages] = useState(1)
   const [zoom, setZoom] = useState(100)
   const [viewMode, setViewMode] = useState<'default' | 'calculatingFitPage' | 'calculatingFitWidth'>('default')
-  const [isFullScreen, setIsFullScreen] = useState(false)
+  const { isFullScreen, setIsFullScreen } = useWindowContext();
   const [zoomInput, setZoomInput] = useState<string>(String(Math.round(zoom)))
+  const [calculationTargetDimensions, setCalculationTargetDimensions] = useState<{ width: number; height: number } | null>(null);
   const currentFilePath = useRef<string | null>(null)
   const saveAsRef = useRef<() => Promise<void>>(async () => {})
   const pdfViewerContainerRef = useRef<HTMLDivElement | null>(null); // Ref for the PDF viewer container
@@ -158,9 +160,17 @@ export default function App() {
       setIsFullScreen(currentlyFullScreen);
       if (currentlyFullScreen) {
         // Entered fullscreen
-        setViewMode('calculatingFitPage');
+        requestAnimationFrame(() => {
+          if (pdfViewerContainerRef.current) {
+            const { clientWidth, clientHeight } = pdfViewerContainerRef.current;
+            console.log("App.tsx: Fullscreen detected, container target size:", clientWidth, clientHeight);
+            setCalculationTargetDimensions({ width: clientWidth, height: clientHeight });
+            setViewMode('calculatingFitPage');
+          }
+        });
       } else {
         // Exited fullscreen
+        setCalculationTargetDimensions(null); // Clear target dimensions
         setViewMode('calculatingFitWidth'); // Adjust to fit width in normal view
       }
     };
@@ -171,6 +181,29 @@ export default function App() {
     };
   }, [setViewMode]);
 
+  // Effect for keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      // Prevent actions if an input or textarea element is focused
+      if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (event.key === 'ArrowLeft') {
+        handlePageChange(page - 1);
+      } else if (event.key === 'ArrowRight') {
+        handlePageChange(page + 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [page, handlePageChange]);
+
   // Simplified handleWheelZoom, as viewMode change is now handled by explicit button clicks leading to onOptimalScaleCalculated
   const handleWheelZoom = useCallback((event: WheelEvent) => {
     if (event.ctrlKey || event.metaKey) {
@@ -179,7 +212,7 @@ export default function App() {
       const zoomSensitivity = 1;
       const zoomChange = -event.deltaY * zoomSensitivity;
       setZoom(prevZoom => {
-        const newZoom = Math.max(25, Math.min(prevZoom + zoomChange, 400));
+        const newZoom = Math.max(10, Math.min(prevZoom + zoomChange, 400));
         // If a manual zoom happens, ensure we are in default view mode
         // This might be redundant if buttons correctly set to default after action, but good for robustness
         if (viewMode !== 'default') {
@@ -210,16 +243,24 @@ export default function App() {
   const handleOptimalScaleCalculated = useCallback((scale: number) => {
     console.log('App.tsx: Optimal scale received from PDFViewer:', scale);
     setZoom(scale * 100);
-    setViewMode('default'); // Always revert to default mode after scale is applied
-  }, [setZoom, setViewMode]);
+    // Only switch out of calculating mode if we are IN calculating mode.
+    if (viewMode === 'calculatingFitPage' || viewMode === 'calculatingFitWidth') {
+        console.log('App.tsx: Setting viewMode to default.');
+        setViewMode('default');
+    } else {
+        console.log('App.tsx: Already in default mode or mode changed, just updating zoom.');
+    }
+  }, [setZoom, setViewMode, viewMode]);
 
   // Handler for "Fit Page" button
   const handleFitPageClick = useCallback(() => {
+    setCalculationTargetDimensions(null); // Not using explicit dimensions here, PDFViewer uses its own
     setViewMode('calculatingFitPage');
   }, [setViewMode]);
 
   // Handler for "Full Width" button
   const handleFitWidthClick = useCallback(() => {
+    setCalculationTargetDimensions(null); // Not using explicit dimensions here
     setViewMode('calculatingFitWidth');
   }, [setViewMode]);
 
@@ -252,9 +293,12 @@ export default function App() {
 
   return (
     <div style={{ width: '100%', background: '#f8f9fa', display: 'flex', flexDirection: 'column', flex: 1, height: '100vh', overflow: 'hidden' }}>
-      {/* Command Palette */}
+      {/* Command Palette - Render only if not in fullscreen */}
       { !isFullScreen && (
         <div style={{
+          position: 'sticky', // Make it sticky
+          top: 0, // Stick to the top
+          zIndex: 10, // Ensure it stays on top of other content
           display: 'flex',
           alignItems: 'center',
           gap: 0,
@@ -363,18 +407,18 @@ export default function App() {
           </CommandButton>
         </div>
       )}
-      {/* PDF Viewer */}
+      {/* PDF Viewer - Takes remaining space */}
       <div
         ref={pdfViewerContainerRef} // Assign ref here
         style={{
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'auto',
-          background: isFullScreen ? '#000' : '#f8f9fa', // Optional: darker background in full screen
+          overflow: viewMode === 'calculatingFitPage' && !isFullScreen ? 'hidden' : 'auto', // Prevent scrolling in Fit Page (non-fullscreen)
+          background: isFullScreen ? '#000' : '#f8f9fa', 
           minHeight: 0,
           width: '100%',
-          height: '100%', // Ensure this takes full height of its parent
+          // height: '100%' is implicitly handled by flex: 1 in a flex column parent
         }}
       >
         {pdfFile ? (
@@ -382,10 +426,12 @@ export default function App() {
             file={pdfFile}
             zoom={zoom / 100}
             viewMode={viewMode}
+            calculationTargetDimensions={calculationTargetDimensions}
             onDocumentLoaded={handlePdfLoaded}
             scrollToPageNumber={page}
             onVisiblePageChanged={handlePageChange}
             onOptimalScaleCalculated={handleOptimalScaleCalculated}
+            singlePageView={isFullScreen || viewMode === 'calculatingFitPage'}
           />
         ) : (
           'PDF Viewer Area'
