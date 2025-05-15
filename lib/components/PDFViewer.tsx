@@ -25,6 +25,7 @@ export interface PDFViewerProps {
   calculationTargetDimensions?: { width: number; height: number } | null;
   onDocumentLoaded?: (pages: number) => void
   scrollToPageNumber?: number
+  goToPageNumber?: number
   onVisiblePageChanged?: (pageNumber: number) => void
   onOptimalScaleCalculated?: (scale: number) => void
   singlePageView?: boolean
@@ -37,6 +38,7 @@ const PDFViewer = ({
   calculationTargetDimensions = null,
   onDocumentLoaded,
   scrollToPageNumber,
+  goToPageNumber,
   onVisiblePageChanged,
   onOptimalScaleCalculated,
   singlePageView = false
@@ -248,21 +250,20 @@ const PDFViewer = ({
     };
   }, []);
 
+  // Only scroll to page for explicit Go to Page actions
   useEffect(() => {
     if (
-      scrollToPageNumber &&
-      scrollToPageNumber !== lastProgrammaticScrollToPageRef.current &&
-      pageRefs.current[scrollToPageNumber]
+      goToPageNumber &&
+      goToPageNumber !== lastProgrammaticScrollToPageRef.current &&
+      pageRefs.current[goToPageNumber]
     ) {
-      if (!userHadRecentScroll.current) {
-        pageRefs.current[scrollToPageNumber]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        lastProgrammaticScrollToPageRef.current = scrollToPageNumber;
-      }
-    } else if (!scrollToPageNumber) {
+      pageRefs.current[goToPageNumber]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      lastProgrammaticScrollToPageRef.current = goToPageNumber;
+    } else if (!goToPageNumber) {
       // Reset if prop becomes undefined
       lastProgrammaticScrollToPageRef.current = undefined;
     }
-  }, [scrollToPageNumber]);
+  }, [goToPageNumber]);
 
   useEffect(() => {
     const options = {
@@ -387,6 +388,7 @@ const PDFViewer = ({
       width: '100%',
       height: '100%',
       overflow: 'auto',
+      scrollBehavior: 'smooth',
       justifyContent: singlePageView ? 'center' : undefined,
     }}>
       <div 
@@ -395,6 +397,7 @@ const PDFViewer = ({
         border: singlePageView ? 'none' : '0px solid #ccc',
         borderRadius: singlePageView ? 0 : 4,
         overflow: 'auto', 
+        scrollBehavior: 'smooth',
         background: singlePageView ? 'transparent' : '#f8f9fa',
         height: '100%',
         width: '100%',

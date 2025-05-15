@@ -2,6 +2,17 @@ import '../styles/app.css'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import PDFViewer from '@/lib/components/PDFViewer'
 import { useWindowContext } from '@/lib/window/components/WindowContext';
+import openIcon from '../assets/icons/open.png';
+import saveIcon from '../assets/icons/save.png';
+import saveAsIcon from '../assets/icons/saveas.png';
+import fitPageIcon from '../assets/icons/fitpage.png';
+import fullWidthIcon from '../assets/icons/fullwidth.png';
+import fullScreenIcon from '../assets/icons/fullscreen.png';
+import previousPageIcon from '../assets/icons/previous_page.svg';
+import nextPageIcon from '../assets/icons/next_page.svg';
+import zoomInIcon from '../assets/icons/zoom_in.svg';
+import zoomOutIcon from '../assets/icons/zoom_out.svg';
+import percentageIcon from '../assets/icons/percentage.svg';
 
 const iconStyle = {
   width: 22,
@@ -25,13 +36,16 @@ export default function App() {
   const currentFilePath = useRef<string | null>(null)
   const saveAsRef = useRef<() => Promise<void>>(async () => {})
   const pdfViewerContainerRef = useRef<HTMLDivElement | null>(null); // Ref for the PDF viewer container
+  const [goToPageNumber, setGoToPageNumber] = useState<number | undefined>(undefined); // NEW: for explicit go to page
 
   // Handler for page changes (used by input, prev/next buttons, and PDFViewer scroll detection)
-  const handlePageChange = useCallback((newPage: number) => {
+  const handlePageChange = useCallback((newPage: number, explicitGoTo?: boolean) => {
     setPage(prevPage => {
       const validPage = Math.max(1, Math.min(newPage, totalPages || 1));
-      // Only update if the page actually changes to avoid potential loops
       if (validPage !== prevPage) {
+        if (explicitGoTo) {
+          setGoToPageNumber(validPage); // Only set for explicit go to
+        }
         return validPage;
       }
       return prevPage;
@@ -291,6 +305,14 @@ export default function App() {
     }
   };
 
+  // Reset goToPageNumber after each use
+  useEffect(() => {
+    if (goToPageNumber !== undefined) {
+      const timeout = setTimeout(() => setGoToPageNumber(undefined), 300);
+      return () => clearTimeout(timeout);
+    }
+  }, [goToPageNumber]);
+
   return (
     <div style={{ width: '100%', background: '#f8f9fa', display: 'flex', flexDirection: 'column', flex: 1, height: '100vh', overflow: 'hidden' }}>
       {/* Command Palette - Render only if not in fullscreen */}
@@ -309,24 +331,24 @@ export default function App() {
           fontFamily: 'inherit',
         }}>
           <CommandButton title="Open" onClick={handleOpenFile}>
-            <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 3v4M8 3v4M12 12v-4M12 12l-3-3M12 12l3-3"/></svg>
+            <img src={openIcon} alt="Open" style={iconStyle} />
           </CommandButton>
           <CommandButton title="Save" onClick={handleSave}>
-            <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M16 3v4H8V3"/><rect x="8" y="15" width="8" height="4" rx="1"/></svg>
+            <img src={saveIcon} alt="Save" style={iconStyle} />
           </CommandButton>
           <CommandButton title="Save As" onClick={handleSaveAs}>
-            <svg style={iconStyle} viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 17v-6M9 14l3 3 3-3"/></svg>
+            <img src={saveAsIcon} alt="Save As" style={iconStyle} />
           </CommandButton>
           <Divider />
-          <CommandButton title="Previous Page" onClick={() => handlePageChange(page - 1)}>
-            <svg style={iconStyle} viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          <CommandButton title="Previous Page" onClick={() => handlePageChange(page - 1, true)}>
+            <img src={previousPageIcon} alt="Previous Page" style={iconStyle} />
           </CommandButton>
           <input
             type="number"
             min={1}
             max={totalPages}
             value={page}
-            onChange={(e) => handlePageChange(parseInt(e.target.value) || 1)}
+            onChange={(e) => handlePageChange(parseInt(e.target.value) || 1, true)}
             style={{
               width: 60,
               textAlign: 'center',
@@ -343,13 +365,14 @@ export default function App() {
             }}
           />
           <span style={{ color: '#888', fontSize: 16, marginRight: 6 }}>/ {totalPages}</span>
-          <CommandButton title="Next Page" onClick={() => handlePageChange(page + 1)}>
-            <svg style={iconStyle} viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg>
+          <CommandButton title="Next Page" onClick={() => handlePageChange(page + 1, true)}>
+            <img src={nextPageIcon} alt="Next Page" style={iconStyle} />
           </CommandButton>
           <Divider />
           <CommandButton title="Zoom Out" onClick={() => setZoom(prev => Math.max(25, prev - 25))}>
-            <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+            <img src={zoomOutIcon} alt="Zoom Out" style={iconStyle} />
           </CommandButton>
+          <img src={percentageIcon} alt="Zoom Level" style={{...iconStyle, width: 18, height: 18, marginRight: '4px', stroke: 'none', fill: '#555'}} />
           <input
             type="text"
             value={zoomInput}
@@ -373,37 +396,27 @@ export default function App() {
           />
           <span style={{ color: '#222', fontSize: 16, margin: '0 6px 0 2px' }}>%</span>
           <CommandButton title="Zoom In" onClick={() => setZoom(prev => Math.min(400, prev + 25))}>
-            <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg>
+            <img src={zoomInIcon} alt="Zoom In" style={iconStyle} />
           </CommandButton>
           <Divider />
           <CommandButton 
             title="Fit Page" 
             onClick={handleFitPageClick}
           >
-            <svg style={iconStyle} viewBox="0 0 24 24">
-              <rect x="4" y="4" width="16" height="16" rx="1"/>
-              <polyline points="4 12 4 4 12 4" />
-              <polyline points="20 12 20 20 12 20" />
-            </svg>
+            <img src={fitPageIcon} alt="Fit Page" style={iconStyle} />
           </CommandButton>
           <CommandButton 
             title="Full Width View" 
             onClick={handleFitWidthClick}
           >
-            <svg style={iconStyle} viewBox="0 0 24 24">
-              <rect x="3" y="6" width="18" height="12" rx="1"/>
-              <path d="M3 12h18"/>
-            </svg>
+            <img src={fullWidthIcon} alt="Full Width View" style={iconStyle} />
           </CommandButton>
           <CommandButton 
             title="Full Screen" 
             onClick={toggleFullScreen}
             active={isFullScreen}
           >
-            <svg style={iconStyle} viewBox="0 0 24 24">
-              <path d="M3 3h6v6m6-6h6v6m-6 6h6v6m-12 0h6v-6"/>
-              {isFullScreen && <path d="M20 14v-4M14 20h-4M4 14v-4M14 4h-4"/>}
-            </svg>
+            <img src={fullScreenIcon} alt="Full Screen" style={iconStyle} />
           </CommandButton>
         </div>
       )}
@@ -429,6 +442,7 @@ export default function App() {
             calculationTargetDimensions={calculationTargetDimensions}
             onDocumentLoaded={handlePdfLoaded}
             scrollToPageNumber={page}
+            goToPageNumber={goToPageNumber} // NEW: only for explicit go to
             onVisiblePageChanged={handlePageChange}
             onOptimalScaleCalculated={handleOptimalScaleCalculated}
             singlePageView={isFullScreen || viewMode === 'calculatingFitPage'}
