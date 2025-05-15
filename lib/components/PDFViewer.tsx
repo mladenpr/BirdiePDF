@@ -21,10 +21,11 @@ interface VisiblePageInfo {
 export interface PDFViewerProps {
   file: string | Blob
   zoom?: number
-  viewMode?: 'default' | 'fullPage' | 'fullWidth'
+  viewMode?: 'default' | 'calculatingFitPage' | 'calculatingFitWidth'
   onDocumentLoaded?: (pages: number) => void
   scrollToPageNumber?: number
   onVisiblePageChanged?: (pageNumber: number) => void
+  onOptimalScaleCalculated?: (scale: number) => void
 }
 
 const PDFViewer = ({ 
@@ -33,10 +34,11 @@ const PDFViewer = ({
   viewMode = 'default',
   onDocumentLoaded,
   scrollToPageNumber,
-  onVisiblePageChanged
+  onVisiblePageChanged,
+  onOptimalScaleCalculated
 }: PDFViewerProps) => {
   const [numPages, setNumPages] = useState<number | null>(null)
-  const [width, setWidth] = useState<number | undefined>(600)
+  const [pageContainerSize, setPageContainerSize] = useState<{ width?: number; height?: number }>({});
   const [loadError, setLoadError] = useState<Error | null>(null)
   const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
@@ -45,7 +47,9 @@ const PDFViewer = ({
 
   const userHadRecentScroll = useRef(false);
   const userScrollTimeoutRef = useRef<number | null>(null);
-  const lastProgrammaticScrollToPageRef = useRef<number | undefined>();
+  const lastProgrammaticScrollToPageRef = useRef<number | undefined>(undefined);
+  const pageContainerRef = useRef<HTMLDivElement | null>(null);
+  const originalPageDimensionsRef = useRef<Record<number, {width: number; height: number}>>({});
 
   // Log file info for debugging
   useEffect(() => {
@@ -58,20 +62,135 @@ const PDFViewer = ({
     }
   }, [file]);
 
-  // Update width based on viewMode
+  // Update width based on viewMode -- THIS LOGIC IS NOW PRIMARILY FOR CALCULATIONS, NOT DIRECT DISPLAY
   useEffect(() => {
-    if (viewMode === 'fullWidth') {
-      setWidth(undefined) // Use container width
-    } else if (viewMode === 'fullPage') {
-      setWidth(undefined) // Width will adjust to fit page height
-    } else {
-      setWidth(600 * zoom) // Default width with zoom applied
+    // We still need pageContainerSize for calculations, so update it if the container resizes.
+    // This effect might be simplified or merged with ResizeObserver logic if direct display based on 'fullPage' is removed.
+    if (pageContainerRef.current) {
+      setPageContainerSize({
+        width: pageContainerRef.current.clientWidth,
+        height: pageContainerRef.current.clientHeight,
+      });
     }
-    // When viewMode or zoom changes, re-evaluate rendered pages based on current visibility
-    // This is implicitly handled by the existing IntersectionObserver re-observing if necessary,
-    // or can be forced by re-initializing renderedPages if needed.
-    // For now, let's rely on the observer.
-  }, [viewMode, zoom])
+  }, [file, numPages]); // Removed viewMode, trigger on file/page changes or rely on ResizeObserver
+
+  // Effect for ResizeObserver on pageContainerRef - to keep pageContainerSize updated for calculations
+  useEffect(() => {
+    if (!pageContainerRef.current) {
+      return;
+    }
+    const resizeObserver = new ResizeObserver(entries => {
+      for (let entry of entries) {
+        console.log('PDFViewer: ResizeObserver triggered, updating pageContainerSize');
+        setPageContainerSize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+    resizeObserver.observe(pageContainerRef.current);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []); // No viewMode dependency, always observe container
+
+  // Calculate and report optimal scale for 'calculatingFitWidth' mode
+  useEffect(() => {
+    if (
+      viewMode === 'calculatingFitWidth' && // UPDATED
+      pageContainerRef.current &&
+      onOptimalScaleCalculated
+    ) {
+      // Always use the current page or page 1
+      const pageToUse = scrollToPageNumber || 1;
+      const pageDimensions = originalPageDimensionsRef.current[pageToUse];
+      if (pageDimensions?.width) {
+        const containerWidth = pageContainerRef.current.clientWidth;
+        const pageOriginalWidth = pageDimensions.width;
+        if (containerWidth > 0 && pageOriginalWidth > 0) {
+          console.log('PDFViewer: Calculating optimal scale for full width', {containerWidth, pageOriginalWidth, pageToUse});
+          const fitScale = containerWidth / pageOriginalWidth;
+          onOptimalScaleCalculated(fitScale);
+        } else {
+          console.log('PDFViewer: Using default scale (1) for full width due to invalid dimensions');
+          onOptimalScaleCalculated(1);
+        }
+      } else {
+        // Retry if dimensions are not available yet
+        console.log('PDFViewer: Page dimensions not available yet, waiting before retrying');
+        const timeoutId = setTimeout(() => {
+          if (viewMode === 'calculatingFitWidth' && pageContainerRef.current) {
+            const containerWidth = pageContainerRef.current.clientWidth;
+            const laterPageDimensions = originalPageDimensionsRef.current[pageToUse];
+            const pageOriginalWidth = laterPageDimensions?.width;
+            if (containerWidth > 0 && pageOriginalWidth && pageOriginalWidth > 0) {
+              console.log('PDFViewer: Retry successful - calculating optimal scale');
+              const fitScale = containerWidth / pageOriginalWidth;
+              onOptimalScaleCalculated(fitScale);
+            } else {
+              console.log('PDFViewer: Using fallback scale (1) after retry');
+              onOptimalScaleCalculated(1);
+            }
+          }
+        }, 100);
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [viewMode, scrollToPageNumber, onOptimalScaleCalculated, originalPageDimensionsRef, pageContainerSize.width, file, numPages]); // Added pageContainerSize.width, file, numPages
+
+  // Calculate and report optimal scale for 'calculatingFitPage' mode
+  useEffect(() => {
+    if (
+      viewMode === 'calculatingFitPage' && // UPDATED
+      pageContainerSize.width && 
+      pageContainerSize.height &&
+      originalPageDimensionsRef.current &&
+      onOptimalScaleCalculated
+    ) {
+      const pageToUse = scrollToPageNumber || 1;
+      const pageDimensions = originalPageDimensionsRef.current[pageToUse];
+
+      if (pageDimensions?.width && pageDimensions?.width > 0 && pageDimensions?.height && pageDimensions?.height > 0) {
+        const scaleX = pageContainerSize.width / pageDimensions.width;
+        const scaleY = pageContainerSize.height / pageDimensions.height;
+        const fitScale = Math.min(scaleX, scaleY);
+        
+        // Prevent extremely small scales if container is tiny or page huge unexpectedly
+        if (fitScale > 0.01) {
+          console.log('PDFViewer: Calculating optimal scale for full page', { fitScale, pageToUse, pageContainerSize, pageDimensions });
+          onOptimalScaleCalculated(fitScale);
+        } else {
+          console.warn('PDFViewer: Calculated fitScale for fullPage is too small, defaulting to 1', { fitScale });
+          onOptimalScaleCalculated(1); // Fallback for excessively small scale
+        }
+      } else if (pageDimensions) { // Dimensions exist but might be zero
+          console.warn('PDFViewer: Using default scale (1) for full page due to zero page dimension(s) for page', pageToUse);
+          onOptimalScaleCalculated(1);
+      } else {
+        // Optional: Retry logic if pageDimensions are not yet available.
+        // This might be needed if this effect runs before Page's onLoadSuccess.
+        console.warn(`PDFViewer: fullPage mode, but original dimensions for page ${pageToUse} are not available. Consider retry or fallback.`);
+        // Fallback if dimensions are missing, to ensure callback still fires.
+        const timeoutId = setTimeout(() => {
+           if (viewMode === 'calculatingFitPage' && onOptimalScaleCalculated) { // Check viewMode again inside timeout
+            const freshPageDimensions = originalPageDimensionsRef.current[pageToUse];
+            if (freshPageDimensions?.width && freshPageDimensions?.width > 0 && freshPageDimensions?.height && freshPageDimensions?.height > 0 && pageContainerSize.width && pageContainerSize.height) {
+              const scaleX = pageContainerSize.width / freshPageDimensions.width;
+              const scaleY = pageContainerSize.height / freshPageDimensions.height;
+              const fitScale = Math.min(scaleX, scaleY);
+              if (fitScale > 0.01) {
+                onOptimalScaleCalculated(fitScale);
+              } else { onOptimalScaleCalculated(1); }
+            } else {
+              console.warn('PDFViewer: Fallback to scale 1 for fullPage after retry, dimensions still missing/invalid for page', pageToUse);
+              onOptimalScaleCalculated(1);
+            }
+           }
+        },150); // Slightly longer timeout for this retry
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [viewMode, pageContainerSize, scrollToPageNumber, onOptimalScaleCalculated, originalPageDimensionsRef, numPages, file]); // Added numPages/file to help re-trigger if document changes
 
   function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
     console.log('PDF loaded successfully with', numPages, 'pages');
@@ -217,7 +336,7 @@ const PDFViewer = ({
               if (pageNumber > 0) {
                 const boundingClientRectTop = entry.boundingClientRect.top;
                 if (topVisiblePage === null || boundingClientRectTop < topVisiblePage.boundingClientRectTop) {
-                  topVisiblePage = { pageNumber, boundingClientRectTop };
+                  topVisiblePage = { pageNumber, boundingClientRectTop } as VisiblePageInfo;
                 }
               }
             }
@@ -226,7 +345,7 @@ const PDFViewer = ({
 
         if (topVisiblePage !== null && onVisiblePageChanged) {
           // At this point, topVisiblePage is guaranteed to be VisiblePageInfo
-          onVisiblePageChanged(topVisiblePage.pageNumber);
+          onVisiblePageChanged((topVisiblePage as VisiblePageInfo).pageNumber);
         }
       }, 200); // Increased debounce to 200ms
     };
@@ -249,15 +368,17 @@ const PDFViewer = ({
     };
   // Ensure all dependencies are correctly listed, especially if pageRefs.current itself is modified elsewhere
   // Adding `file` dependency to re-run when the PDF changes and pageRefs are repopulated.
-  }, [numPages, onVisiblePageChanged, file, renderedPages]); // Added renderedPages
+  }, [numPages, onVisiblePageChanged, file, renderedPages, viewMode]); // Added viewMode
 
-  // Calculate scale based on viewMode
-  const getScale = () => {
-    if (viewMode === 'fullPage') {
-      return 1 // Scale will be handled by the Page component's height property
-    }
-    return zoom
-  }
+  // getDynamicPageProps should now ALWAYS return scale based on App's zoom, as viewModes are for calculation signals only.
+  const getDynamicPageProps = () => {
+    // console.log(`PDFViewer: getDynamicPageProps, current App zoom prop (as scale): ${zoom}, viewMode signal: ${viewMode}`);
+    // All rendering is now based on the zoom prop controlled by App.tsx (passed as `scale` to Page)
+    // The 'calculatingFitPage' and 'calculatingFitWidth' viewModes are signals for useEffect hooks to calculate and callback,
+    // not for direct rendering changes within this function for an intermediate state.
+    // App.tsx will set viewMode to 'default' and update the zoom prop for the actual visual render change.
+    return { width: undefined, height: undefined, scale: zoom }; // `zoom` is the prop from App.tsx (e.g., 0.75 for 75%)
+  };
 
   return (
     <div 
@@ -268,16 +389,18 @@ const PDFViewer = ({
       alignItems: 'center', 
       marginTop: 16,
       width: '100%',
-      height: viewMode === 'fullPage' ? '100%' : 'auto',
+      height: '100%',
       overflow: 'auto'
     }}>
-      <div style={{ 
+      <div 
+        ref={pageContainerRef}
+        style={{ 
         border: '1px solid #ccc', 
         borderRadius: 4, 
         overflow: 'auto', 
-        background: '#222',
-        height: viewMode === 'fullPage' ? 'calc(100% - 32px)' : 'auto',
-        width: viewMode === 'fullWidth' ? '100%' : 'auto',
+        background: '#f8f9fa',
+        height: '100%',
+        width: '100%',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'flex-start',
@@ -297,6 +420,7 @@ const PDFViewer = ({
           >
             {Array.from({ length: numPages || 0 }, (_, i) => {
                const pageNumber = i + 1;
+               const pageProps = getDynamicPageProps();
                return (
                  <div 
                    key={pageNumber} 
@@ -307,10 +431,22 @@ const PDFViewer = ({
                    {renderedPages.has(pageNumber) ? (
                      <Page
                        pageNumber={pageNumber}
-                       width={width}
-                       scale={getScale()}
+                       width={pageProps.width}
+                       height={pageProps.height}
+                       scale={pageProps.scale}
                        renderTextLayer={true}
                        renderAnnotationLayer={true}
+                       onLoadSuccess={(pageData) => {
+                         if (originalPageDimensionsRef.current) {
+                           originalPageDimensionsRef.current[pageNumber] = {
+                             width: pageData.originalWidth,
+                             height: pageData.originalHeight,
+                           };
+                         }
+                         // If this is the current page in fullWidth mode, might need to trigger scale calculation again
+                         // This can be complex if this callback triggers the effect that calls onOptimalScaleCalculated.
+                         // For now, the effect reacting to scrollToPageNumber and originalPageDimensionsRef.current changes should cover it.
+                       }}
                      />
                    ) : (
                      <div style={{ 

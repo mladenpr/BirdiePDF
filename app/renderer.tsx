@@ -12,3 +12,10 @@ ReactDOM.createRoot(document.getElementById('app') as HTMLElement).render(
     </WindowContextProvider>
   </React.StrictMode>
 )
+
+// Ensure Electron zoom is reset to 100% on every load (fixes 'small but correct px size' issue)
+if (window.api?.invoke) {
+  window.api.invoke('web-actual-size').then(() => {
+    console.log('Zoom level reset to 100%');
+  });
+}

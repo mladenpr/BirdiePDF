@@ -2,7 +2,7 @@
 
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  font-size: 14px;
+  font-size: 16px;
   margin: 0;
   overflow: hidden;
 }
@@ -13,4 +13,24 @@ body,
   height: 100%;
   margin: 0;
   line-height: 1.4;
+}
+
+/* Sizing for menubar/titlebar is now controlled by CSS variables in lib/window/window.css for consistency. */
+.window-titlebar {
+  padding: 0.25rem 0.5rem;
+  /* min-height: var(--window-titlebar-height); */
+}
+
+.titlebar-menuItem .menuItem-label {
+  /* font-size: var(--window-titlebar-font-size); */
+  padding: 0.25rem 0.5rem;
+}
+
+.menuItem-popup {
+  /* font-size: var(--window-titlebar-font-size); */
+}
+
+.menuItem-popupItem {
+  /* padding: 0.3rem 0.6rem; */
+  /* font-size: var(--window-titlebar-font-size); */
 }

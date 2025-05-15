@@ -17,10 +17,12 @@ export default function App() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [zoom, setZoom] = useState(100)
-  const [viewMode, setViewMode] = useState<'default' | 'fullPage' | 'fullWidth'>('default')
+  const [viewMode, setViewMode] = useState<'default' | 'calculatingFitPage' | 'calculatingFitWidth'>('default')
   const [isFullScreen, setIsFullScreen] = useState(false)
+  const [zoomInput, setZoomInput] = useState<string>(String(Math.round(zoom)))
   const currentFilePath = useRef<string | null>(null)
   const saveAsRef = useRef<() => Promise<void>>(async () => {})
+  const pdfViewerContainerRef = useRef<HTMLDivElement | null>(null); // Ref for the PDF viewer container
 
   // Handler for page changes (used by input, prev/next buttons, and PDFViewer scroll detection)
   const handlePageChange = useCallback((newPage: number) => {
@@ -99,6 +101,10 @@ export default function App() {
   useEffect(() => {
     saveAsRef.current = handleSaveAs
   }, [handleSaveAs])
+
+  useEffect(() => {
+    setZoomInput(String(Math.round(zoom)));
+  }, [zoom]);
   
   // Handler for saving the current file
   const handleSave = useCallback(async () => {
@@ -146,6 +152,85 @@ export default function App() {
       }
     }
   }, [])
+
+  // Simplified handleWheelZoom, as viewMode change is now handled by explicit button clicks leading to onOptimalScaleCalculated
+  const handleWheelZoom = useCallback((event: WheelEvent) => {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      const zoomSensitivity = 1;
+      const zoomChange = -event.deltaY * zoomSensitivity;
+      setZoom(prevZoom => {
+        const newZoom = Math.max(25, Math.min(prevZoom + zoomChange, 400));
+        // If a manual zoom happens, ensure we are in default view mode
+        // This might be redundant if buttons correctly set to default after action, but good for robustness
+        if (viewMode !== 'default') {
+          setViewMode('default');
+        }
+        return newZoom;
+      });
+    }
+  }, [setZoom, viewMode, setViewMode]);
+
+  // Effect to attach wheel listener with passive: false
+  useEffect(() => {
+    const container = pdfViewerContainerRef.current;
+    if (container) {
+      // The type of handleWheelZoom needs to match EventListener, which expects a generic Event, 
+      // but we know it's a WheelEvent. We cast it or ensure handleWheelZoom can handle Event.
+      // For simplicity in this step, assuming handleWheelZoom is compatible or we cast inside.
+      const wheelListener = (event: Event) => handleWheelZoom(event as WheelEvent);
+
+      // Cast options to 'any' to resolve the TypeScript linter error regarding 'passive'
+      container.addEventListener('wheel', wheelListener, { passive: false } as any);
+      return () => {
+        container.removeEventListener('wheel', wheelListener, { passive: false } as any);
+      };
+    }
+  }, [handleWheelZoom]); // Re-attach if handleWheelZoom changes (due to its own deps)
+
+  const handleOptimalScaleCalculated = useCallback((scale: number) => {
+    console.log('App.tsx: Optimal scale received from PDFViewer:', scale);
+    setZoom(scale * 100);
+    setViewMode('default'); // Always revert to default mode after scale is applied
+  }, [setZoom, setViewMode]);
+
+  // Handler for "Fit Page" button
+  const handleFitPageClick = useCallback(() => {
+    setViewMode('calculatingFitPage');
+  }, [setViewMode]);
+
+  // Handler for "Full Width" button
+  const handleFitWidthClick = useCallback(() => {
+    setViewMode('calculatingFitWidth');
+  }, [setViewMode]);
+
+  const handleZoomInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setZoomInput(event.target.value);
+  };
+
+  const applyZoomInput = () => {
+    const newZoomValue = parseFloat(zoomInput);
+    if (!isNaN(newZoomValue) && newZoomValue >= 25 && newZoomValue <= 400) {
+      setZoom(newZoomValue);
+    } else {
+      setZoomInput(String(Math.round(zoom))); // Revert to current valid zoom
+    }
+  };
+
+  const handleZoomInputBlur = () => {
+    applyZoomInput();
+  };
+
+  const handleZoomInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      applyZoomInput();
+      event.currentTarget.blur(); // Remove focus from input
+    } else if (event.key === 'Escape') {
+      setZoomInput(String(Math.round(zoom))); // Revert on Escape
+      event.currentTarget.blur();
+    }
+  };
 
   return (
     <div style={{ width: '100%', background: '#f8f9fa', display: 'flex', flexDirection: 'column', flex: 1 }}>
@@ -202,25 +287,45 @@ export default function App() {
         <CommandButton title="Zoom Out" onClick={() => setZoom(prev => Math.max(25, prev - 25))}>
           <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
         </CommandButton>
-        <span style={{ color: '#222', fontSize: 16, minWidth: 48, textAlign: 'center' }}>{zoom}%</span>
+        <input
+          type="text"
+          value={zoomInput}
+          onChange={handleZoomInputChange}
+          onBlur={handleZoomInputBlur}
+          onKeyDown={handleZoomInputKeyDown}
+          style={{
+            width: 45, // Adjusted width for 3 digits + potentially a bit more
+            textAlign: 'center',
+            background: '#fff',
+            border: '1px solid #e5e7eb',
+            color: '#222',
+            borderRadius: 8,
+            fontSize: 16,
+            margin: '0 0 0 6px', // Margin adjusted to accommodate % sign
+            padding: '4px 0',
+            outline: 'none',
+            boxShadow: 'none',
+            height: 32,
+          }}
+        />
+        <span style={{ color: '#222', fontSize: 16, margin: '0 6px 0 2px' }}>%</span>
         <CommandButton title="Zoom In" onClick={() => setZoom(prev => Math.min(400, prev + 25))}>
           <svg style={iconStyle} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg>
         </CommandButton>
         <Divider />
         <CommandButton 
-          title="Full Page View" 
-          onClick={() => setViewMode(prev => prev === 'fullPage' ? 'default' : 'fullPage')}
-          active={viewMode === 'fullPage'}
+          title="Fit Page" 
+          onClick={handleFitPageClick}
         >
           <svg style={iconStyle} viewBox="0 0 24 24">
             <rect x="4" y="4" width="16" height="16" rx="1"/>
-            <path d="M4 12h16"/>
+            <polyline points="4 12 4 4 12 4" />
+            <polyline points="20 12 20 20 12 20" />
           </svg>
         </CommandButton>
         <CommandButton 
           title="Full Width View" 
-          onClick={() => setViewMode(prev => prev === 'fullWidth' ? 'default' : 'fullWidth')}
-          active={viewMode === 'fullWidth'}
+          onClick={handleFitWidthClick}
         >
           <svg style={iconStyle} viewBox="0 0 24 24">
             <rect x="3" y="6" width="18" height="12" rx="1"/>
@@ -240,6 +345,7 @@ export default function App() {
       </div>
       {/* PDF Viewer */}
       <div
+        ref={pdfViewerContainerRef} // Assign ref here
         style={{
           flex: 1,
           display: 'flex',
@@ -259,6 +365,7 @@ export default function App() {
             onDocumentLoaded={handlePdfLoaded}
             scrollToPageNumber={page}
             onVisiblePageChanged={handlePageChange}
+            onOptimalScaleCalculated={handleOptimalScaleCalculated}
           />
         ) : (
           'PDF Viewer Area'
