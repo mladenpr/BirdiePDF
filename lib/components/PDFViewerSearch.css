@@ -1,0 +1,108 @@
+/* PDFViewerSearch.css - Styles for PDF text highlighting */
+
+/* 
+ * This file contains styles for highlighting search matches in PDF documents
+ * The approach uses the fact that text items are rendered with their content in a data-text-content attribute
+ * Our custom text renderer in PDFViewer.tsx adds special suffixes to the text content
+ * These CSS rules target those suffixes to apply highlighting styles
+ */
+
+/* STRATEGY 1: Standard attribute selector approach */
+/* Force all text spans to have proper opacity - base style */
+.react-pdf__Page__textContent span {
+  opacity: 1 !important;
+}
+
+/* 
+ * IMPORTANT: These are critical styles to ensure the text layer and canvas
+ * are properly stacked and text highlights are visible
+ */
+.pdf-page {
+  position: relative !important;
+}
+
+/* Ensure text layer is above canvas with correct positioning */
+.pdf-page .react-pdf__Page__textContent {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  overflow: hidden !important;
+  opacity: 1 !important;
+  line-height: 1 !important;
+  z-index: 2 !important; /* Above canvas */
+  pointer-events: auto !important; /* Allow interaction */
+}
+
+/* Make sure canvas stays below text */
+.pdf-page .react-pdf__Page__canvas {
+  z-index: 1 !important;
+}
+
+/* More specific attribute selectors */
+/* Match exact suffix with quotes - trying different matching techniques */
+.react-pdf__Page__textContent span[data-text-content$="::highlight"],
+.react-pdf__Page__textContent span[data-text-content*="::highlight"] {
+  color: black !important;
+  background-color: red !important;
+  background: red !important;
+  -webkit-text-fill-color: black !important;
+  text-shadow: 0 0 0 black !important;
+  border-radius: 2px !important;
+  display: inline !important;
+  position: relative !important;
+  z-index: 100 !important;
+  mix-blend-mode: normal !important;
+  opacity: 1 !important;
+}
+
+.react-pdf__Page__textContent span[data-text-content$="::highlightCurrent"],
+.react-pdf__Page__textContent span[data-text-content*="::highlightCurrent"] {
+  color: black !important;
+  background-color: cyan !important;
+  background: cyan !important;
+  -webkit-text-fill-color: black !important;
+  text-shadow: 0 0 0 black !important;
+  border-radius: 2px !important;
+  font-weight: bold !important;
+  position: relative !important;
+  z-index: 101 !important;
+  mix-blend-mode: normal !important;
+  opacity: 1 !important;
+}
+
+/* Hide the markers */
+.react-pdf__Page__textContent span[data-text-content$="::highlight"]::after,
+.react-pdf__Page__textContent span[data-text-content$="::highlightCurrent"]::after,
+.react-pdf__Page__textContent span[data-text-content*="::highlight"]::after,
+.react-pdf__Page__textContent span[data-text-content*="::highlightCurrent"]::after {
+  content: "" !important;
+  display: none !important;
+}
+
+/* STRATEGY 2: Classes for direct DOM styling */
+.pdf-direct-highlight {
+  background-color: red !important;
+  color: black !important;
+  border-radius: 2px !important;
+  z-index: 100 !important;
+  opacity: 1 !important;
+}
+
+.pdf-direct-highlight-current {
+  background-color: cyan !important;
+  color: black !important;
+  border-radius: 2px !important;
+  font-weight: bold !important;
+  z-index: 101 !important;
+  opacity: 1 !important;
+}
+
+/* STRATEGY 3: Make all text visible for easier debugging */
+/*
+.react-pdf__Page__textContent span {
+  color: rgba(0, 0, 0, 0.3) !important;
+  z-index: 20 !important;
+}
+*/ 

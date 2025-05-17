@@ -13,6 +13,10 @@ import nextPageIcon from '../assets/icons/next_page.svg';
 import zoomInIcon from '../assets/icons/zoom_in.svg';
 import zoomOutIcon from '../assets/icons/zoom_out.svg';
 import percentageIcon from '../assets/icons/percentage.svg';
+import searchIcon from '../assets/icons/search.svg';
+import panelIcon from '../assets/icons/pages.svg';
+import type { SearchMatch } from '@/lib/components/PDFViewer';
+import PDFPagePane from '@/lib/components/PDFPagePane';
 
 const iconStyle = {
   width: 22,
@@ -36,7 +40,15 @@ export default function App() {
   const currentFilePath = useRef<string | null>(null)
   const saveAsRef = useRef<() => Promise<void>>(async () => {})
   const pdfViewerContainerRef = useRef<HTMLDivElement | null>(null); // Ref for the PDF viewer container
-  const [goToPageNumber, setGoToPageNumber] = useState<number | undefined>(undefined); // NEW: for explicit go to page
+  const [goToPageNumber, setGoToPageNumber] = useState<number | undefined>(undefined); // NEW: for explicit go to
+  const [isPagePaneOpen, setIsPagePaneOpen] = useState(false); // NEW: State for page pane
+
+  // Search state
+  const [showSearchInput, setShowSearchInput] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+  const [searchTriggerCounter, setSearchTriggerCounter] = useState(0);
 
   // Handler for page changes (used by input, prev/next buttons, and PDFViewer scroll detection)
   const handlePageChange = useCallback((newPage: number, explicitGoTo?: boolean) => {
@@ -200,7 +212,12 @@ export default function App() {
     const handleKeyDown = (event: KeyboardEvent) => {
       const activeElement = document.activeElement;
       // Prevent actions if an input or textarea element is focused
-      if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+      // or if the search input is visible and focused
+      if (
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        (showSearchInput && activeElement === document.getElementById('searchInput'))
+      ) {
         return;
       }
 
@@ -216,7 +233,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [page, handlePageChange]);
+  }, [page, handlePageChange, showSearchInput]);
 
   // Simplified handleWheelZoom, as viewMode change is now handled by explicit button clicks leading to onOptimalScaleCalculated
   const handleWheelZoom = useCallback((event: WheelEvent) => {
@@ -305,6 +322,55 @@ export default function App() {
     }
   };
 
+  // Search handlers
+  const toggleSearchInput = () => {
+    setShowSearchInput(prev => !prev);
+    if (showSearchInput) { // If we are closing it
+      // Clear all search state
+      setSearchQuery('');
+      setSearchMatches([]);
+      setCurrentMatchIndex(-1);
+      // Also reset the trigger counter to avoid auto-search on reopening
+      setSearchTriggerCounter(0);
+    }
+  };
+
+  const handleSearchQueryChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+    if (event.target.value === '') {
+      setSearchMatches([]);
+      setCurrentMatchIndex(-1);
+    }
+  };
+
+  const handleSearchSubmit = () => { // No longer async, just triggers the counter
+    if (!searchQuery.trim()) {
+      setSearchMatches([]);
+      setCurrentMatchIndex(-1);
+      return;
+    }
+    setSearchTriggerCounter(prev => prev + 1); // Increment counter to trigger search in PDFViewer
+    console.log('App.tsx: Search trigger counter incremented for query:', searchQuery);
+  };
+
+  const handleNextMatch = () => {
+    if (searchMatches.length > 0) {
+      setCurrentMatchIndex(prev => (prev + 1) % searchMatches.length);
+    }
+  };
+
+  const handlePreviousMatch = () => {
+    if (searchMatches.length > 0) {
+      setCurrentMatchIndex(prev => (prev - 1 + searchMatches.length) % searchMatches.length);
+    }
+  };
+
+  // Callback from PDFViewer with search results
+  const onSearchResults = useCallback((matches: SearchMatch[]) => {
+    setSearchMatches(matches);
+    setCurrentMatchIndex(matches.length > 0 ? 0 : -1);
+  }, []);
+
   // Reset goToPageNumber after each use
   useEffect(() => {
     if (goToPageNumber !== undefined) {
@@ -312,6 +378,10 @@ export default function App() {
       return () => clearTimeout(timeout);
     }
   }, [goToPageNumber]);
+
+  const togglePagePane = () => {
+    setIsPagePaneOpen(prev => !prev);
+  };
 
   return (
     <div style={{ width: '100%', background: '#f8f9fa', display: 'flex', flexDirection: 'column', flex: 1, height: '100vh', overflow: 'hidden' }}>
@@ -330,6 +400,10 @@ export default function App() {
           minHeight: 48,
           fontFamily: 'inherit',
         }}>
+          <CommandButton title="Toggle Page Pane" onClick={togglePagePane} active={isPagePaneOpen}>
+            <img src={panelIcon} alt="Page Pane" style={iconStyle} />
+          </CommandButton>
+          <Divider />
           <CommandButton title="Open" onClick={handleOpenFile}>
             <img src={openIcon} alt="Open" style={iconStyle} />
           </CommandButton>
@@ -418,6 +492,47 @@ export default function App() {
           >
             <img src={fullScreenIcon} alt="Full Screen" style={iconStyle} />
           </CommandButton>
+          <Divider />
+          <CommandButton title="Search" onClick={toggleSearchInput} active={showSearchInput}>
+            <img src={searchIcon} alt="Search" style={iconStyle} />
+          </CommandButton>
+          {showSearchInput && (
+            <>
+              <input
+                id="searchInput"
+                type="text"
+                placeholder="Search PDF..."
+                value={searchQuery}
+                onChange={handleSearchQueryChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSearchSubmit();
+                  if (e.key === 'Escape') toggleSearchInput();
+                }}
+                style={{
+                  width: 150,
+                  background: '#fff',
+                  border: '1px solid #e5e7eb',
+                  color: '#222',
+                  borderRadius: 8,
+                  fontSize: 16,
+                  margin: '0 6px',
+                  padding: '4px 8px',
+                  outline: 'none',
+                  boxShadow: 'none',
+                  height: 32,
+                }}
+              />
+              <CommandButton title="Previous Match" onClick={handlePreviousMatch} disabled={searchMatches.length === 0}>
+                <img src={previousPageIcon} alt="Previous Match" style={{...iconStyle, transform: 'rotate(90deg)'}} />
+              </CommandButton>
+              <span style={{ color: '#222', fontSize: 14, margin: '0 4px', minWidth: 40, textAlign: 'center'}}>
+                {searchMatches.length > 0 ? `${currentMatchIndex + 1}/${searchMatches.length}` : '0/0'}
+              </span>
+              <CommandButton title="Next Match" onClick={handleNextMatch} disabled={searchMatches.length === 0}>
+                <img src={nextPageIcon} alt="Next Match" style={{...iconStyle, transform: 'rotate(90deg)' }} />
+              </CommandButton>
+            </>
+          )}
         </div>
       )}
       {/* PDF Viewer - Takes remaining space */}
@@ -425,8 +540,8 @@ export default function App() {
         ref={pdfViewerContainerRef} // Assign ref here
         style={{
           flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
+          display: 'flex', // Changed to flex to accommodate side pane
+          flexDirection: 'row', // Children (pane and viewer) will be in a row
           overflow: viewMode === 'calculatingFitPage' && !isFullScreen ? 'hidden' : 'auto', // Prevent scrolling in Fit Page (non-fullscreen)
           background: isFullScreen ? '#000' : '#f8f9fa', 
           minHeight: 0,
@@ -434,22 +549,39 @@ export default function App() {
           // height: '100%' is implicitly handled by flex: 1 in a flex column parent
         }}
       >
-        {pdfFile ? (
-          <PDFViewer
-            file={pdfFile}
-            zoom={zoom / 100}
-            viewMode={viewMode}
-            calculationTargetDimensions={calculationTargetDimensions}
-            onDocumentLoaded={handlePdfLoaded}
-            scrollToPageNumber={page}
-            goToPageNumber={goToPageNumber} // NEW: only for explicit go to
-            onVisiblePageChanged={handlePageChange}
-            onOptimalScaleCalculated={handleOptimalScaleCalculated}
-            singlePageView={isFullScreen || viewMode === 'calculatingFitPage'}
+        {isPagePaneOpen && (
+          <PDFPagePane 
+            totalPages={totalPages}
+            currentPage={page}
+            onPageSelect={(selectedPage) => handlePageChange(selectedPage, true)} // Pass true for explicitGoTo
+            isVisible={isPagePaneOpen} 
+            pdfFile={pdfFile}
           />
-        ) : (
-          'PDF Viewer Area'
         )}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 /* Important for flex item to shrink */ }}>
+          {pdfFile ? (
+            <PDFViewer
+              file={pdfFile}
+              zoom={zoom / 100}
+              viewMode={viewMode}
+              calculationTargetDimensions={calculationTargetDimensions}
+              onDocumentLoaded={handlePdfLoaded}
+              scrollToPageNumber={page}
+              goToPageNumber={goToPageNumber} // NEW: only for explicit go to
+              onVisiblePageChanged={handlePageChange}
+              onOptimalScaleCalculated={handleOptimalScaleCalculated}
+              singlePageView={isFullScreen || viewMode === 'calculatingFitPage'}
+              // Search related props for PDFViewer
+              searchQuery={searchQuery}
+              searchMatches={searchMatches}
+              currentMatchIndex={currentMatchIndex}
+              onSearchResults={onSearchResults} 
+              triggerSearch={searchTriggerCounter} 
+            />
+          ) : (
+            'PDF Viewer Area'
+          )}
+        </div>
       </div>
     </div>
   )
@@ -459,16 +591,19 @@ function CommandButton({
   children, 
   title, 
   onClick,
-  active = false 
+  active = false,
+  disabled = false
 }: { 
   children: React.ReactNode, 
   title: string, 
   onClick?: () => void,
-  active?: boolean
+  active?: boolean,
+  disabled?: boolean
 }) {
   return (
     <button
       title={title}
+      disabled={disabled}
       style={{
         background: active ? '#e1e6f0' : 'none',
         border: 'none',
@@ -480,13 +615,14 @@ function CommandButton({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        cursor: 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
         transition: 'background 0.15s',
         outline: 'none',
+        opacity: disabled ? 0.5 : 1,
       }}
-      onMouseOver={e => !active && (e.currentTarget.style.background = '#ececec')}
-      onMouseOut={e => !active && (e.currentTarget.style.background = 'none')}
-      onClick={onClick}
+      onMouseOver={e => !active && !disabled && (e.currentTarget.style.background = '#ececec')}
+      onMouseOut={e => !active && !disabled && (e.currentTarget.style.background = 'none')}
+      onClick={!disabled ? onClick : undefined}
     >
       {children}
     </button>
