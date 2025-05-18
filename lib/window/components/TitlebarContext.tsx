@@ -16,9 +16,9 @@ export const TitlebarContextProvider = ({ children }: { children: React.ReactNod
   const closeActiveMenu = () => setActiveMenuIndex(null)
 
   return (
-    <TitlebarContext value={{ activeMenuIndex, setActiveMenuIndex, menusVisible, setMenusVisible, closeActiveMenu }}>
+    <TitlebarContext.Provider value={{ activeMenuIndex, setActiveMenuIndex, menusVisible, setMenusVisible, closeActiveMenu }}>
       {children}
-    </TitlebarContext>
+    </TitlebarContext.Provider>
   )
 }
 

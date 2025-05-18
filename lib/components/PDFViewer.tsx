@@ -78,6 +78,7 @@ export interface PDFViewerProps {
   onSearchResults?: (matches: SearchMatch[]) => void;
   searchMatches?: SearchMatch[];
   triggerSearch?: number; // Changed to number to accept the counter
+  interactionMode?: 'pointer' | 'pan'; // NEW: Interaction mode prop
 }
 
 const PDFViewer = ({ 
@@ -97,6 +98,7 @@ const PDFViewer = ({
   onSearchResults,
   searchMatches,
   triggerSearch,
+  interactionMode = 'pointer', // Default to pointer if not provided
 }: PDFViewerProps) => {
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageContainerSize, setPageContainerSize] = useState<{ width?: number; height?: number }>({});
@@ -112,6 +114,8 @@ const PDFViewer = ({
   const pageContainerRef = useRef<HTMLDivElement | null>(null);
   const originalPageDimensionsRef = useRef<Record<number, {width: number; height: number}>>({});
   const [textItemsByPage, setTextItemsByPage] = useState<Record<number, any[]>>({}); // To store text items for search
+  const [isPanning, setIsPanning] = useState(false); // NEW: State for panning
+  const dragStartRef = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 }); // NEW: Ref for drag start details
 
   // Log file info for debugging
   useEffect(() => {
@@ -614,6 +618,36 @@ const PDFViewer = ({
     return { width: undefined, height: undefined, scale: zoom }; // `zoom` is the prop from App.tsx (e.g., 0.75 for 75%)
   };
 
+  // Panning handlers
+  const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (interactionMode === 'pan' && pageContainerRef.current) {
+      event.preventDefault();
+      setIsPanning(true);
+      dragStartRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        scrollLeft: pageContainerRef.current.scrollLeft,
+        scrollTop: pageContainerRef.current.scrollTop,
+      };
+    }
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (interactionMode === 'pan' && isPanning && pageContainerRef.current) {
+      event.preventDefault();
+      const dx = event.clientX - dragStartRef.current.x;
+      const dy = event.clientY - dragStartRef.current.y;
+      pageContainerRef.current.scrollLeft = dragStartRef.current.scrollLeft - dx;
+      pageContainerRef.current.scrollTop = dragStartRef.current.scrollTop - dy;
+    }
+  };
+
+  const handleMouseUpOrLeave = () => {
+    if (interactionMode === 'pan' && isPanning) {
+      setIsPanning(false);
+    }
+  };
+
   return (
     <div 
       onScroll={handleUserScroll}
@@ -625,7 +659,7 @@ const PDFViewer = ({
       width: '100%',
       height: '100%',
       overflow: 'auto',
-      scrollBehavior: 'smooth',
+      scrollBehavior: isPanning ? 'auto' : 'smooth', // Disable smooth scroll while panning
       justifyContent: singlePageView ? 'center' : undefined,
     }}>
       <div 
@@ -634,7 +668,7 @@ const PDFViewer = ({
         border: singlePageView ? 'none' : '0px solid #ccc',
         borderRadius: singlePageView ? 0 : 4,
         overflow: 'auto', 
-        scrollBehavior: 'smooth',
+        scrollBehavior: isPanning ? 'auto' : 'smooth', // Disable smooth scroll while panning
         background: singlePageView ? 'transparent' : '#f8f9fa',
         height: '100%',
         width: '100%',
@@ -642,7 +676,13 @@ const PDFViewer = ({
         flexDirection: 'column',
         justifyContent: singlePageView ? 'center' : 'flex-start',
         alignItems: 'center',
-      }}>
+        cursor: interactionMode === 'pan' ? (isPanning ? 'grabbing' : 'grab') : 'default',
+      }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUpOrLeave}
+      onMouseLeave={handleMouseUpOrLeave}
+      >
         {loadError ? (
           <div style={{ color: 'white', padding: '20px', textAlign: 'center' }}>
             <h3>Error Loading PDF</h3>
