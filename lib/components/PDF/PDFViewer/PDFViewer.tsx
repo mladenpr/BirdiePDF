@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 // console.log('Triggering linter for PDFViewer.tsx'); // This line will be part of the no-op
 import { Document, Page, pdfjs, PageProps } from 'react-pdf'
+import type { SearchMatch, PDFViewerProps } from './types'; // UPDATED IMPORT
 
 // Import the CSS files in a way that's compatible with Electron bundling
 // Make imports explicit to ensure they're included in the bundle
@@ -13,7 +14,7 @@ console.log('PDF CSS imports loaded:',
 );
 
 // Custom CSS for search highlighting
-import './PDFViewerSearch.css' // CSS for search result highlighting
+import './PDFViewerSearch.css' // CSS for search result highlighting // UPDATED PATH (relative to new location)
 
 /**
  * PDF Search Highlighting Implementation Notes:
@@ -47,39 +48,7 @@ interface VisiblePageInfo {
   boundingClientRectTop: number;
 }
 
-// Define a more specific type for search matches
-export interface SearchMatch {
-  pageIndex: number; // 0-indexed page number
-  itemIndex: number; // Index of the text item on the page
-  text: string; // The full text of the item where match was found
-  query: string; // The search query that was matched
-  startIndexInItem: number; // Start char index of the match within item.text
-  endIndexInItem: number; // End char index of the match
-  // Optional: position/bounding box for direct rendering if needed later
-  // transform?: number[]; // from item.transform
-  // width?: number; // from item.width
-  // height?: number; // from item.height
-}
-
-export interface PDFViewerProps {
-  file: string | Blob
-  zoom?: number
-  viewMode?: 'default' | 'calculatingFitPage' | 'calculatingFitWidth'
-  calculationTargetDimensions?: { width: number; height: number } | null;
-  onDocumentLoaded?: (pages: number) => void
-  scrollToPageNumber?: number
-  goToPageNumber?: number
-  onVisiblePageChanged?: (pageNumber: number) => void
-  onOptimalScaleCalculated?: (scale: number) => void
-  singlePageView?: boolean
-  // Search related props
-  searchQuery?: string;
-  currentMatchIndex?: number;
-  onSearchResults?: (matches: SearchMatch[]) => void;
-  searchMatches?: SearchMatch[];
-  triggerSearch?: number; // Changed to number to accept the counter
-  interactionMode?: 'pointer' | 'pan'; // NEW: Interaction mode prop
-}
+// REMOVED SearchMatch and PDFViewerProps interfaces as they are now imported from ./types.ts
 
 const PDFViewer = ({ 
   file,

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useWindowContext } from './WindowContext'
 import { useTitlebarContext } from './TitlebarContext'
-import type { TitlebarMenu, TitlebarMenuItem } from '../titlebarMenus'
+import type { TitlebarMenu, TitlebarMenuItem } from '../types'
 
 export const Titlebar = () => {
   const { title, icon, titleCentered, menuItems } = useWindowContext().titlebar

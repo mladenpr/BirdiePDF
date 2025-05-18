@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, Dispatch, SetStateAction } from 'react'
 import { Titlebar } from './Titlebar'
-import type { TitlebarMenu } from '../titlebarMenus'
+import type { TitlebarMenu } from '../types'
 import { TitlebarContextProvider } from './TitlebarContext'
 
 interface WindowContextProps {

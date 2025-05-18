@@ -1,6 +1,6 @@
 import '../styles/app.css'
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, forwardRef } from 'react'
-import PDFViewer from '@/lib/components/PDFViewer'
+import PDFViewer from '@/lib/components/PDF/PDFViewer/PDFViewer'
 import { useWindowContext } from '@/lib/window/components/WindowContext';
 import openIcon from '../assets/icons/open.png';
 import saveIcon from '../assets/icons/save.png';
@@ -17,8 +17,10 @@ import searchIcon from '../assets/icons/search.svg';
 import panelIcon from '../assets/icons/pages.svg';
 import pointerIcon from '../assets/icons/pointer.svg';
 import panIcon from '../assets/icons/drag.svg';
-import type { SearchMatch } from '@/lib/components/PDFViewer';
-import PDFPagePane from '@/lib/components/PDFPagePane';
+import type { SearchMatch } from '@/lib/components/PDF/PDFViewer/types';
+import PDFPagePane from '@/lib/components/PDF/PDFPagePane/PDFPagePane';
+import CommandButton from '@/lib/components/UI/CommandButton';
+import Divider from '@/lib/components/UI/Divider';
 
 const iconStyle = {
   width: 22,
@@ -911,52 +913,3 @@ export default function App() {
     </div>
   )
 }
-
-const CommandButton = forwardRef(({ 
-  children, 
-  title, 
-  onClick,
-  active = false,
-  disabled = false
-}: { 
-  children: React.ReactNode, 
-  title: string, 
-  onClick?: () => void,
-  active?: boolean,
-  disabled?: boolean
-}, ref: React.Ref<HTMLButtonElement>) => {
-  return (
-    <button
-      ref={ref}
-      title={title}
-      disabled={disabled}
-      style={{
-        background: active ? '#e1e6f0' : 'none',
-        border: 'none',
-        borderRadius: 8,
-        padding: '6px 10px',
-        margin: '0 2px',
-        minWidth: 32,
-        minHeight: 32,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'background 0.15s',
-        outline: 'none',
-        opacity: disabled ? 0.5 : 1,
-      }}
-      onMouseOver={e => !active && !disabled && (e.currentTarget.style.background = '#ececec')}
-      onMouseOut={e => !active && !disabled && (e.currentTarget.style.background = 'none')}
-      onClick={!disabled ? onClick : undefined}
-    >
-      {children}
-    </button>
-  );
-});
-CommandButton.displayName = 'CommandButton';
-
-const Divider = forwardRef((props: {}, ref: React.Ref<HTMLSpanElement>) => {
-  return <span ref={ref} style={{ height: 28, width: 1, background: '#e5e7eb', margin: '0 16px', display: 'inline-block', borderRadius: 1 }} />;
-});
-Divider.displayName = 'Divider';

@@ -1,16 +1,4 @@
-export interface TitlebarMenu {
-  name: string
-  items: TitlebarMenuItem[]
-}
-
-export interface TitlebarMenuItem {
-  name: string
-  action?: string
-  actionParams?: (string | number | object)[]
-  actionCallback?: () => void
-  shortcut?: string
-  items?: TitlebarMenuItem[]
-}
+import type { TitlebarMenu, TitlebarMenuItem } from './types';
 
 export const menuItems: TitlebarMenu[] = [
   {

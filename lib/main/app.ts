@@ -1,6 +1,6 @@
 import { BrowserWindow, shell, app } from 'electron'
 import { join } from 'path'
-import { registerWindowIPC } from '@/lib/window/ipcEvents'
+import { registerWindowIPC } from '@/lib/window/ipc'
 import appIcon from '@/resources/build/icon.png?asset'
 
 export function createAppWindow(): void {
